@@ -1,4 +1,5 @@
 import logging
+import os
 from dataclasses import dataclass, field
 
 import torch
@@ -126,8 +127,9 @@ if __name__ == "__main__":
     trainer.add_callback(callback)
 
     last_checkpoint = get_last_checkpoint(training_args.output_dir)
-    # trainer.train(resume_from_checkpoint=last_checkpoint)
-    trainer.evaluate()
+    trainer.train(resume_from_checkpoint=last_checkpoint)
 
-    with console.status(f"[bold green]Training completed! Saving the model to {training_args.output_dir}"):
+    with console.status(
+        f"[bold green]Training completed! Saving the model to {os.getcwd()} / {training_args.output_dir}"
+    ):
         trainer.save_model(training_args.output_dir)

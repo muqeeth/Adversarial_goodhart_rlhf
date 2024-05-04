@@ -9,11 +9,13 @@ GITHUB_REPO := git@github.com:mnoukhov/trl_summarize.git
 REPO_NAME := trl_summarize
 WANDB_API_KEY_FILE := /home/toolkit/wandb_api_key
 DONT_CLONE_FOLDER := results
+WANDB_ENTITY := mila-language-drift
+WANDB_PROJECT := trl
 
 IMAGE := registry.console.elementai.com/snow.interactive_toolkit/default
 IMAGE_REVISION ?= latest
 
-CPU ?= 8
+CPU ?= 4
 CPU_MEM ?= 64
 GPU ?= 1
 GPU_MEM ?= 80
@@ -210,6 +212,8 @@ else
 		--env PYTHONPATH=${_PYTHONPATH} \
 		--env HF_HOME=${HF_HOME} \
 		--env WANDB_API_KEY=${WANDB_API_KEY} \
+		--env WANDB_ENTITY=${WANDB_ENTITY} \
+		--env WANDB_PROJECT=${WANDB_PROJECT} \
 		--workdir $(_WORKDIR) \
 		--image $(IMAGE):$(IMAGE_REVISION) \
 		--data $(ORG).$(USER).home:/home/toolkit \

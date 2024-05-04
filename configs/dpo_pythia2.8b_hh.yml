@@ -1,3 +1,4 @@
+run_name: dpo_pythia2.8b_hh.yml
 output_dir: results
 ## model and dataset
 model_name_or_path: "mnoukhov/pythia-2.8b-sft_hh_rlhf"

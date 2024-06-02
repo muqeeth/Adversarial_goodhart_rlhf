@@ -7,7 +7,9 @@ from datasets import load_dataset
 from peft import LoraConfig
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments
-from trl import ModelConfig, RewardTrainer, TrlParser
+from trl import ModelConfig, RewardTrainer
+
+from utils import TRLParser
 
 
 tqdm.pandas()
@@ -42,16 +44,16 @@ def get_peft_config(model_config: ModelConfig):
     return peft_config
 
 
-def tldr_preprocess_function(examples):
+def tldr_preprocess_function(examples, max_length):
     new_examples = {
         "input_ids_chosen": [],
         "attention_mask_chosen": [],
         "input_ids_rejected": [],
         "attention_mask_rejected": [],
     }
-    for query, chosen, rejected in zip(examples["query"], examples["chosen"], examples["rejected"]):
-        tokenized_chosen = tokenizer(query + chosen)
-        tokenized_rejected = tokenizer(query + rejected)
+    for query, chosen, rejected in zip(examples["prompt"], examples["chosen"], examples["rejected"]):
+        tokenized_chosen = tokenizer(query + chosen, max_length=max_length, truncation=True)
+        tokenized_rejected = tokenizer(query + rejected, max_length=max_length, truncation=True)
 
         new_examples["input_ids_chosen"].append(tokenized_chosen["input_ids"])
         new_examples["attention_mask_chosen"].append(tokenized_chosen["attention_mask"])
@@ -62,9 +64,9 @@ def tldr_preprocess_function(examples):
 
 
 if __name__ == "__main__":
-    parser = TrlParser((RewardScriptArguments, TrainingArguments, ModelConfig))
+    parser = TRLParser((RewardScriptArguments, TrainingArguments, ModelConfig))
     script_args, reward_config, model_config = parser.parse_args_and_config()
-    reward_config.gradient_checkpointing_kwargs = dict(use_reentrant=False)
+    # reward_config.gradient_checkpointing_kwargs = dict(use_reentrant=False)
 
     ################
     # Model & Tokenizer
@@ -94,7 +96,7 @@ if __name__ == "__main__":
 
     if not tokenizer.pad_token:
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-        model.config.pad_token_id = tokenizer.pad_token_id
+    model.config.pad_token_id = tokenizer.pad_token_id
 
     ################
     # Dataset
@@ -111,11 +113,8 @@ if __name__ == "__main__":
     # Preprocess the dataset and filter out examples that are longer than args.max_length
     raw_datasets = raw_datasets.map(
         tldr_preprocess_function,
+        max_length=script_args.max_length,
         batched=True,
-    )
-    raw_datasets = raw_datasets.filter(
-        lambda x: len(x["input_ids_chosen"]) <= script_args.max_length
-        and len(x["input_ids_rejected"]) <= script_args.max_length
     )
     train_dataset = raw_datasets[script_args.dataset_train_split]
     eval_dataset = raw_datasets[script_args.dataset_eval_split]

@@ -1,6 +1,7 @@
 import logging
 import os
 from dataclasses import dataclass, field
+from typing import Optional
 
 import torch
 from datasets import load_dataset
@@ -8,17 +9,12 @@ from rich.console import Console
 from rich.logging import RichHandler
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
 from transformers.trainer_utils import get_last_checkpoint
-from trl import (
-    DPOTrainer,
-    ModelConfig,
-    RichProgressCallback,
-    get_kbit_device_map,
-    get_peft_config,
-    get_quantization_config,
-)
-from trl.commands.cli_utils import DpoScriptArguments, TrlParser, init_zero_verbose
+from trl import DPOConfig, DPOTrainer, ModelConfig, get_kbit_device_map, get_peft_config, get_quantization_config
+from trl.commands.cli_utils import DPOScriptArguments, TrlParser, init_zero_verbose
 
 from callbacks import PerplexityCallback
+from utils import TRLParser
+
 
 init_zero_verbose()
 logging.basicConfig(format="%(message)s", datefmt="[%X]", handlers=[RichHandler()], level=logging.INFO)
@@ -38,13 +34,15 @@ def hh_sft_format_func(eos_token):
 
 
 @dataclass
-class DPOScriptArguments(DpoScriptArguments):
-    dataset_train_name: str = field(default="train", metadata={"help": "the name of the training set of the dataset"})
-    dataset_test_name: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
+class ScriptArguments(DPOScriptArguments):
+    task_type: str = field(default="hh")
+    eval_dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
 
+
+#
 
 if __name__ == "__main__":
-    parser = TrlParser((DPOScriptArguments, TrainingArguments, ModelConfig))
+    parser = TRLParser((ScriptArguments, DPOConfig, ModelConfig))
     args, training_args, model_config = parser.parse_args_and_config()
 
     # Force use our print callback
@@ -70,11 +68,6 @@ if __name__ == "__main__":
         quantization_config=quantization_config,
     )
     model = AutoModelForCausalLM.from_pretrained(model_config.model_name_or_path, **model_kwargs)
-    peft_config = get_peft_config(model_config)
-    if peft_config is None:
-        model_ref = AutoModelForCausalLM.from_pretrained(model_config.model_name_or_path, **model_kwargs)
-    else:
-        model_ref = None
     tokenizer = AutoTokenizer.from_pretrained(model_config.model_name_or_path)
     if args.ignore_bias_buffers:
         # torch distributed hack
@@ -85,13 +78,15 @@ if __name__ == "__main__":
     ################
     # Dataset
     ################
-    ds = load_dataset(args.dataset_name)
-    if args.sanity_check:
-        for key in ds:
-            ds[key] = ds[key].select(range(50))
+    train_dataset = load_dataset(args.dataset_name, split=args.dataset_train_split)
+    eval_dataset_name = args.eval_dataset_name if args.eval_dataset_name is not None else args.dataset_name
+    eval_dataset = load_dataset(eval_dataset_name, split=args.dataset_test_split)
 
-    train_dataset = ds[args.dataset_train_name]
-    eval_dataset = ds[args.dataset_test_name]
+    if args.sanity_check:
+        train_dataset = train_dataset.select(range(128))
+        eval_dataset = eval_dataset.select(range(128))
+        training_args.push_to_hub = False
+        # training_args.report_to = "none"
 
     ################
     # Training
@@ -99,32 +94,31 @@ if __name__ == "__main__":
     with console.status("[bold green]Initializing the DPOTrainer..."):
         trainer = DPOTrainer(
             model,
-            model_ref,
             args=training_args,
-            beta=args.beta,
+            # beta=args.beta,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             tokenizer=tokenizer,
-            max_length=args.max_length,
-            max_target_length=args.max_target_length,
-            max_prompt_length=args.max_prompt_length,
-            generate_during_eval=args.generate_during_eval,
+            # max_length=args.max_length,
+            # max_target_length=args.max_target_length,
+            # max_prompt_length=args.max_prompt_length,
+            # generate_during_eval=args.generate_during_eval,
             peft_config=get_peft_config(model_config),
             # callbacks=[RichProgressCallback],
         )
 
-    callback = PerplexityCallback(
-        args=training_args,
-        dataset=eval_dataset,
-        tokenizer=tokenizer,
-        accelerator=trainer.accelerator,
-        max_length=args.max_length,
-        format_func=hh_sft_format_func(tokenizer.eos_token),
-        hub_model_id=training_args.hub_model_id,
-        response_template="\n\nAssistant:",
-    )
-
-    trainer.add_callback(callback)
+    # callback = PerplexityCallback(
+    #     args=training_args,
+    #     dataset=eval_dataset,
+    #     tokenizer=tokenizer,
+    #     accelerator=trainer.accelerator,
+    #     max_length=args.max_length,
+    #     format_func=hh_sft_format_func(tokenizer.eos_token),
+    #     hub_model_id=training_args.hub_model_id,
+    #     response_template="\n\nAssistant:",
+    # )
+    #
+    # trainer.add_callback(callback)
 
     last_checkpoint = get_last_checkpoint(training_args.output_dir)
     trainer.train(resume_from_checkpoint=last_checkpoint)
@@ -133,3 +127,8 @@ if __name__ == "__main__":
         f"[bold green]Training completed! Saving the model to {os.getcwd()} / {training_args.output_dir}"
     ):
         trainer.save_model(training_args.output_dir)
+        if model_config.use_peft:
+            merged_path = os.path.join(training_args.output_dir, "_merged")
+            model = trainer.model.merge_and_unload()
+            model.save_pretrained(merged_path)
+            tokenizer.save_pretrained(merged_path)

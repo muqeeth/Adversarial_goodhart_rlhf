@@ -113,8 +113,8 @@ if __name__ == "__main__":
     # Preprocess the dataset and filter out examples that are longer than args.max_length
     raw_datasets = raw_datasets.map(
         tldr_preprocess_function,
-        max_length=script_args.max_length,
         batched=True,
+        fn_kwargs={"max_length": script_args.max_length},
     )
     train_dataset = raw_datasets[script_args.dataset_train_split]
     eval_dataset = raw_datasets[script_args.dataset_eval_split]

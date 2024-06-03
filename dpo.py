@@ -1,16 +1,16 @@
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 
 import torch
 from datasets import load_dataset
 from rich.console import Console
 from rich.logging import RichHandler
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.trainer_utils import get_last_checkpoint
 from trl import DPOConfig, DPOTrainer, ModelConfig, get_kbit_device_map, get_peft_config, get_quantization_config
-from trl.commands.cli_utils import DPOScriptArguments, TrlParser, init_zero_verbose
+from trl.commands.cli_utils import DPOScriptArguments, init_zero_verbose
 
 from callbacks import PerplexityCallback
 from utils import TRLParser
@@ -35,11 +35,9 @@ def hh_sft_format_func(eos_token):
 
 @dataclass
 class ScriptArguments(DPOScriptArguments):
-    task_type: str = field(default="hh")
+    task_type: Literal["tldr", "hh"] = field(default="tldr")
     eval_dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
 
-
-#
 
 if __name__ == "__main__":
     parser = TRLParser((ScriptArguments, DPOConfig, ModelConfig))
@@ -86,26 +84,30 @@ if __name__ == "__main__":
         train_dataset = train_dataset.select(range(128))
         eval_dataset = eval_dataset.select(range(128))
         training_args.push_to_hub = False
-        # training_args.report_to = "none"
+        training_args.report_to = ""
+        training_args.save_strategy = "no"
+
+    if args.task_type == "tldr":
+        # DPO tokenizer automatically adds a BOS token, which we don't want
+        # instead pretend that the first token is a BOS token
+        tokenizer.bos_token_id = tokenizer.encode("SUBREDDIT")[0]
+
+    else:
+        raise NotImplementedError
 
     ################
     # Training
     ################
-    with console.status("[bold green]Initializing the DPOTrainer..."):
-        trainer = DPOTrainer(
-            model,
-            args=training_args,
-            # beta=args.beta,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            tokenizer=tokenizer,
-            # max_length=args.max_length,
-            # max_target_length=args.max_target_length,
-            # max_prompt_length=args.max_prompt_length,
-            # generate_during_eval=args.generate_during_eval,
-            peft_config=get_peft_config(model_config),
-            # callbacks=[RichProgressCallback],
-        )
+    # with console.status("[bold green]Initializing the DPOTrainer..."):
+    trainer = DPOTrainer(
+        model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        tokenizer=tokenizer,
+        peft_config=get_peft_config(model_config),
+        # callbacks=[RichProgressCallback],
+    )
 
     # callback = PerplexityCallback(
     #     args=training_args,

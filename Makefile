@@ -15,16 +15,16 @@ WANDB_PROJECT := trl
 IMAGE := registry.console.elementai.com/snow.interactive_toolkit/default
 IMAGE_REVISION ?= latest
 
-CPU ?= 4
+CPU ?= 2
 CPU_MEM ?= 64
-GPU ?= 4
+GPU ?= 1
 GPU_MEM ?= 32
 # Another option "Tesla T4". You will need `GPU=4` to use that. 
 # GPU_TYPE ?= "A100"
 MAX_RUN_TIME ?= 7200
 
 # Accelerate settings
-NPROC ?= $(GPU)
+NPROC ?= 4
 FP ?= fp16
 
 # RAND_ID := $(shell python -c 'import random; print(random.randint(0, int(1e9)))')

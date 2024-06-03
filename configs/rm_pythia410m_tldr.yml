@@ -4,7 +4,7 @@ push_to_hub: True
 model_name_or_path: mnoukhov/pythia410m-sft-tldr
 dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia1b
 dataset_eval_split: validation
-learning_rate: 0.00001
+learning_rate: 1.0e-5
 lr_scheduler_type: cosine
 fp16: True
 gradient_accumulation_steps: 8

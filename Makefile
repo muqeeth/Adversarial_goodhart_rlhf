@@ -29,7 +29,7 @@ FP ?= fp16
 
 # RAND_ID := $(shell python -c 'import random; print(random.randint(0, int(1e9)))')
 DATE_ID := $(shell date +%Y_%m_%d__%H_%M_%S)
-JOB_NAME ?= $(USER)_$(REPO_NAME)_$(DATE_ID)
+JOB_NAME ?= $(REPO_NAME)_$(DATE_ID)
 OLD_JOB_NAME := $(JOB_NAME)_old_${NOW}
 WANDB_API_KEY := $(shell cat ${WANDB_API_KEY_FILE})
 

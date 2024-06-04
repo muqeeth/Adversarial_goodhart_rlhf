@@ -143,7 +143,7 @@ DEEPSPEED ?= 0
 # which internally calls a deepspeed configuration file
 ACCELERATE_CFG ?= conf/deepspeed/accelerate_base.yaml
 ACCELERATE_LOCAL_CFG ?= conf/deepspeed/accelerate_local.yaml
-DEEPSPEED_CFG ?= conf/deepspeed/deepspeed_stage3_bf16.json
+DEEPSPEED_CFG ?= configs/deepspeed_zero2.yaml
 
 _CONDA_PREFIX := $(CONDA_EXE) run -n $(ENV) --no-capture-output
 ifeq ($(NPROC), 1)
@@ -151,7 +151,7 @@ ifeq ($(NPROC), 1)
 else
 	_ACCELERATE_PREFIX := accelerate launch --multi_gpu --mixed_precision=$(FP) --num_processes $(NPROC)
 endif
-_DEEPSPEED_PREFIX := accelerate launch --use_deepspeed --mixed_precision=$(FP) --num_processes $(NPROC) --config_file $(ACCELERATE_CFG) --deepspeed_config_file $(DEEPSPEED_CFG)
+_DEEPSPEED_PREFIX := accelerate launch --config_file $(DEEPSPEED_CFG) --mixed_precision=$(FP) --num_processes $(NPROC) 
 
 _COMMAND := bash -c "$(COMMAND)"
 _CONDA_COMMAND := $(_CONDA_PREFIX) bash -c "$(COMMAND)"

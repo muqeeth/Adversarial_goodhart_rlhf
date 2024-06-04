@@ -24,7 +24,7 @@ GPU_MEM ?= 32
 MAX_RUN_TIME ?= 7200
 
 # Accelerate settings
-NPROC ?= 4
+NPROC ?= 1
 FP ?= fp16
 
 # RAND_ID := $(shell python -c 'import random; print(random.randint(0, int(1e9)))')

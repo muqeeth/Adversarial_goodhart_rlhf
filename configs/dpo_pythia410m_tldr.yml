@@ -1,6 +1,7 @@
 task_type: "tldr"
 output_dir: dpo_pythia410m_tldr
 run_name: dpo_pythia410m_tldr
+wandb_run_id: snow
 # hub_model_id: "mnoukhov/pythia410m-dpo-tldr-full"
 push_to_hub: False
 model_name_or_path: "mnoukhov/pythia410m-sft-tldr"

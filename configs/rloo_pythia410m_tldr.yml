@@ -1,0 +1,19 @@
+task_type: "tldr"
+output_dir: rloo_pythia410m_tldr
+run_name: rloo_pythia410m_tldr
+dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
+dataset_test_split: validation
+## ppo stuff
+num_ppo_epochs: 4
+num_mini_batches: 1 
+learning_rate: 1.0e-5 
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 1 
+total_episodes: 4000 
+model_name_or_path: mnoukhov/pythia410m-sft-tldr 
+sft_model_path: mnoukhov/pythia410m-sft-tldr 
+reward_model_path: mnoukhov/pythia410m-rm-tldr 
+local_rollout_forward_batch_size: 8
+non_eos_penalty: True
+stop_token eos: True
+sample_generations_freq: 100

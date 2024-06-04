@@ -1,14 +1,73 @@
-from typing import Dict, Optional, Union
+from typing import Dict, List, Literal, Optional, Union
 
 import torch
 import torch.nn as nn
-from transformers import (
-    PreTrainedModel,
-)
+from transformers import PreTrainedModel
 from trl import DPOTrainer
 
 
-class OldDPOTrainer(DPOTrainer):
+class MyDPOTrainer(DPOTrainer):
+    def get_batch_loss_metrics(
+        self,
+        model,
+        batch: Dict[str, Union[List, torch.LongTensor]],
+        train_eval: Literal["train", "eval"] = "train",
+    ):
+        """Compute the DPO loss and other metrics for the given batch of inputs for train or test."""
+        metrics = {}
+
+        (
+            policy_chosen_logps,
+            policy_rejected_logps,
+            policy_chosen_logits,
+            policy_rejected_logits,
+        ) = self.concatenated_forward(model, batch)
+
+        # if reference_chosen_logps and reference_rejected_logps in batch use them, otherwise use the reference model
+        if "reference_chosen_logps" in batch and "reference_rejected_logps" in batch:
+            reference_chosen_logps = batch["reference_chosen_logps"]
+            reference_rejected_logps = batch["reference_rejected_logps"]
+        else:
+            with torch.no_grad():
+                if self.ref_model is None:
+                    with self.null_ref_context():
+                        (
+                            reference_chosen_logps,
+                            reference_rejected_logps,
+                            _,
+                            _,
+                        ) = self.concatenated_forward(self.model, batch)
+                else:
+                    (
+                        reference_chosen_logps,
+                        reference_rejected_logps,
+                        _,
+                        _,
+                    ) = self.concatenated_forward(self.ref_model, batch)
+
+        losses, chosen_rewards, rejected_rewards = self.dpo_loss(
+            policy_chosen_logps,
+            policy_rejected_logps,
+            reference_chosen_logps,
+            reference_rejected_logps,
+        )
+        reward_accuracies = (chosen_rewards > rejected_rewards).float()
+
+        prefix = "eval_" if train_eval == "eval" else ""
+        metrics[f"{prefix}rewards/chosen"] = chosen_rewards.mean()
+        metrics[f"{prefix}rewards/rejected"] = rejected_rewards.mean()
+        metrics[f"{prefix}rewards/accuracies"] = reward_accuracies.mean()
+        metrics[f"{prefix}rewards/margins"] = (chosen_rewards - rejected_rewards).mean()
+        metrics[f"{prefix}logps/rejected"] = policy_rejected_logps.detach().mean()
+        metrics[f"{prefix}logps/chosen"] = policy_chosen_logps.detach().mean()
+        metrics[f"{prefix}logits/rejected"] = policy_rejected_logits.detach().mean()
+        metrics[f"{prefix}logits/chosen"] = policy_chosen_logits.detach().mean()
+
+        for key, values in metrics.items():
+            metrics[key] = self._nested_gather(values).mean().item()
+
+        return losses.mean(), metrics
+
     def build_tokenized_answer(self, prompt, answer):
         full_tokenized = self.tokenizer(prompt + answer, add_special_tokens=False)
         prompt_input_ids = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]

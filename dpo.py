@@ -13,7 +13,7 @@ from trl import DPOConfig, DPOTrainer, ModelConfig, get_kbit_device_map, get_pef
 from trl.commands.cli_utils import DPOScriptArguments, init_zero_verbose
 
 from callbacks import PerplexityCallback
-from src.dpo_trainer import OldDPOTrainer
+from src.dpo_trainer import MyDPOTrainer
 from src.utils import TRLParser
 
 
@@ -38,6 +38,7 @@ def hh_sft_format_func(eos_token):
 class ScriptArguments(DPOScriptArguments):
     task_type: Literal["tldr", "hh"] = field(default="tldr")
     eval_dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
+    wandb_run_id: Optional[str] = field(default=None)
 
 
 if __name__ == "__main__":
@@ -47,6 +48,8 @@ if __name__ == "__main__":
     # Force use our print callback
     training_args.disable_tqdm = True
     console = Console()
+
+    # TODO wandb run id
 
     ################
     # Model & Tokenizer
@@ -82,8 +85,8 @@ if __name__ == "__main__":
     eval_dataset = load_dataset(eval_dataset_name, split=args.dataset_test_split)
 
     if args.sanity_check:
-        train_dataset = train_dataset.select(range(128))
-        eval_dataset = eval_dataset.select(range(128))
+        train_dataset = train_dataset.select(range(16))
+        eval_dataset = eval_dataset.select(range(16))
         training_args.push_to_hub = False
         training_args.report_to = ""
         training_args.save_strategy = "no"
@@ -100,7 +103,7 @@ if __name__ == "__main__":
     # Training
     ################
     # with console.status("[bold green]Initializing the DPOTrainer..."):
-    trainer = OldDPOTrainer(
+    trainer = MyDPOTrainer(
         model,
         args=training_args,
         train_dataset=train_dataset,

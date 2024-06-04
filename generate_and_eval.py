@@ -180,8 +180,6 @@ def evaluate(args, prompts, reference, generations, model_name=None):
         else:
             wandb_log_id = args.wandb_log_id
 
-        os.environ.pop("WANDB_NAME")
-        # original_name = wandb_name.removeprefix("geneval_")
         wandb.init(id=wandb_log_id, resume="allow")
         log_to_wandb = True
         print(f"Logging to WandB {wandb_log_id}")

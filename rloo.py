@@ -7,6 +7,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
+from transformers.trainer_callback import ProgressCallback
 from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
@@ -91,6 +92,7 @@ if __name__ == "__main__":
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
     )
+    trainer.add_callback(ProgressCallback)
     trainer.train()
     trainer.save_model(config.output_dir)
     if config.push_to_hub:

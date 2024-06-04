@@ -13,6 +13,7 @@ from trl import DPOConfig, DPOTrainer, ModelConfig, get_kbit_device_map, get_pef
 from trl.commands.cli_utils import DPOScriptArguments, init_zero_verbose
 
 from callbacks import PerplexityCallback
+from src.dpo_trainer import OldDPOTrainer
 from utils import TRLParser
 
 
@@ -87,19 +88,19 @@ if __name__ == "__main__":
         training_args.report_to = ""
         training_args.save_strategy = "no"
 
-    if args.task_type == "tldr":
-        # DPO tokenizer automatically adds a BOS token, which we don't want
-        # instead pretend that the first token is a BOS token
-        tokenizer.bos_token_id = tokenizer.encode("SUBREDDIT")[0]
-
-    else:
-        raise NotImplementedError
+    # if args.task_type == "tldr":
+    #     # DPO tokenizer automatically adds a BOS token, which we don't want
+    #     # instead pretend that the first token is a BOS token
+    #     tokenizer.bos_token_id = tokenizer.encode("SUBREDDIT")[0]
+    #
+    # else:
+    #     raise NotImplementedError
 
     ################
     # Training
     ################
     # with console.status("[bold green]Initializing the DPOTrainer..."):
-    trainer = DPOTrainer(
+    trainer = OldDPOTrainer(
         model,
         args=training_args,
         train_dataset=train_dataset,

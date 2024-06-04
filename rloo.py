@@ -12,7 +12,7 @@ from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
 from src.rloo_trainer import MyRLOOTrainer
-from utils import TRLParser
+from src.utils import TRLParser
 
 
 @dataclass

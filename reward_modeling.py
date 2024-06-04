@@ -9,7 +9,7 @@ from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments
 from trl import ModelConfig, RewardTrainer
 
-from utils import TRLParser
+from src.utils import TRLParser
 
 
 tqdm.pandas()

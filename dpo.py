@@ -14,7 +14,7 @@ from trl.commands.cli_utils import DPOScriptArguments, init_zero_verbose
 
 from callbacks import PerplexityCallback
 from src.dpo_trainer import OldDPOTrainer
-from utils import TRLParser
+from src.utils import TRLParser
 
 
 init_zero_verbose()

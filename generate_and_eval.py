@@ -5,8 +5,6 @@ from typing import List, Optional
 
 import numpy as np
 import torch
-
-# from accelerate import PartialState
 from datasets import builder, load_dataset
 from peft import PeftModelForCausalLM
 from tqdm.auto import tqdm
@@ -14,7 +12,6 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    HfArgumentParser,
     pipeline,
 )
 from vllm import LLM, SamplingParams
@@ -29,8 +26,8 @@ builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 @dataclass
 class GenerateScriptArguments:
-    output_dir: Optional[str] = field(
-        default="/home/toolkit/trl_results",
+    save_generations: Optional[bool] = field(
+        default=False,
         metadata={"help": "output folder"},
     )
     num_gpus: Optional[int] = field(default=1)
@@ -137,16 +134,15 @@ def generate(script_args):
         torch.cuda.empty_cache()
         torch.distributed.destroy_process_group()
 
-    if script_args.output_dir is not None:
+    if script_args.save_generations:
         # TODO add hash to dataset path
         # sampling_str = str(sampling_params)
         # sampling_hash = hashlib.sha256(sampling_str.encode()).hexdigest()[:10]
 
         # TODO fix model name or path string
         dataset_path = os.path.join(
-            script_args.output_dir,
-            script_args.dataset_name.replace("/", "_"),
-            script_args.model_name_or_path.replace("/", "_"),
+            script_args.model_name_or_path,
+            "_generations",
         )
         os.makedirs(dataset_path, exist_ok=True)
         print("saving dataset to")
@@ -160,32 +156,8 @@ def generate(script_args):
 
     return prompts, reference, gens
 
-    # ds_info = DatasetInfo(
-    #     f"{script_args.dataset_name} split {script_args.train_split} prompts used to generate with {script_args.model_name}"
-    #     f" temp {script_args.temperature} top_p {script_args.top_p} "
-    # )
-    # generated_dataset = Dataset.from_generator(dataset_generator, info=ds_info)
-    # generated_dataset.push_to_hub(os.path.basename(script_args.output_dir), split="train")
 
-
-def evaluate(args, prompts, reference, generations, model_name=None):
-    if args.wandb_log_id is not None:
-        # don't overwrite the wandb id of the original run
-        if args.wandb_log_id == "model_name":
-            # model name = config_wandblogid
-            wandb_log_id = model_name.split("_")[-1]
-        elif args.wandb_log_id == "model_path":
-            # model path = /home/.../wandb_log_id/model_name
-            wandb_log_id = model_name.split("/")[-2]
-        else:
-            wandb_log_id = args.wandb_log_id
-
-        wandb.init(id=wandb_log_id, resume="allow")
-        log_to_wandb = True
-        print(f"Logging to WandB {wandb_log_id}")
-    else:
-        log_to_wandb = False
-
+def evaluate(args, prompts, reference, generations, log_to_wandb=False):
     torch_dtype = args.eval_dtype if args.eval_dtype in ["auto", None] else getattr(torch, args.eval_dtype)
     gold_tokenizer_name = args.gold_tokenizer_name if args.gold_tokenizer_name is not None else args.gold_model_name
     tokenizer = AutoTokenizer.from_pretrained(gold_tokenizer_name)
@@ -267,9 +239,6 @@ if __name__ == "__main__":
     parser = TRLParser([GenerateScriptArguments, EvalScriptArguments])
     generate_args, eval_args = parser.parse_args_and_config()
 
-    if generate_args.sanity_check:
-        eval_args.wandb_log_id = None
-
     print("GENERATING")
     prompts, reference, generations = generate(generate_args)
     #
@@ -277,5 +246,20 @@ if __name__ == "__main__":
     # dataset = dataset.select(range(100))
     # generations = {"step0": dataset["query_reference_response"]}
     # reference = dataset["query_reference_response"]
+    if generate_args.sanity_check:
+        eval_args.wandb_log_id = None
+    elif eval_args.wandb_log_id == "snapshot_model_name":
+        # model path = /home/.../snapshot/model-name
+        # wandb_log_id = snapshot_model-name
+        path = generate_args.model_name_or_path.strip("/")
+        snapshot_id = path.split("/")[-2]
+        model_name = path.split("/")[-1]
+        eval_args.wandb_log_id = snapshot_id + "_" + model_name
+
+    log_to_wandb = eval_args.wandb_log_id is not None
+    if log_to_wandb:
+        wandb.init(id=eval_args.wandb_log_id, resume="allow")
+        print(f"Logging to WandB {eval_args.wandb_log_id}")
+
     print("EVALUATING")
-    evaluate(eval_args, prompts, reference, generations, generate_args.model_name_or_path)
+    evaluate(eval_args, prompts, reference, generations, log_to_wandb)

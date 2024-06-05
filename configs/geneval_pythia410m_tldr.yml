@@ -1,15 +1,8 @@
-# model_name_or_path: /home/toolkit/trl/results/fcdf36eaa636e81435d429e1ec6cef34/output
-# wandb_log_id: model_path
-model_name_or_path: /home/toolkit/snapshots/fa0277d307db882ff9735fe0edc03cfb24a59442/dpo_pythia410m_tldr
-wandb_log_id: eknajuax
+# model_name_or_path: /home/toolkit/snapshots/fa0277d307db882ff9735fe0edc03cfb24a59442/dpo_pythia410m_tldr
+wandb_log_id: snapshot_model_name
+# wandb_log_id: eknajuax
 # model_paths: [checkpoint-291]
-# model_paths: .
-# base_model_name: mnoukhov/pythia410m-sft-tldr
-# tokenizer_name: mnoukhov/pythia410m-sft-tldr
-# model_name_or_path: mnoukhov/pythia410m-tldr-sft
-# wandb_log_id: 26eb19659f00603a0372a843331512b1
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
-# gold_model_name: mnoukhov/pythia1b-sft-rm-tldrprompt
 gold_model_name: cleanrl/EleutherAI_pythia-1b-deduped__reward__tldr
 gold_tokenizer_name: EleutherAI/pythia-1b-deduped
 max_new_tokens: 128

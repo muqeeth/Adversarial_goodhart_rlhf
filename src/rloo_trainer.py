@@ -140,8 +140,7 @@ class MyRLOOTrainer(RLOOTrainer):
         )
         DEFAULT_CALLBACKS = [DefaultFlowCallback]
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
-        if self.callbacks is None:
-            self.callbacks = default_callbacks
+        self.callbacks = default_callbacks if self.callbacks is None else default_callbacks + self.callbacks
         self.callback_handler = CallbackHandler(
             self.callbacks,
             self.model,
@@ -150,6 +149,9 @@ class MyRLOOTrainer(RLOOTrainer):
             self.lr_scheduler,
         )
         self.control = TrainerControl()
+
+        self.current_flos = 0
+        self.hp_search_backend = None
         self.is_deepspeed_enabled = getattr(self.accelerator.state, "deepspeed_plugin", None) is not None
         self.is_fsdp_enabled = getattr(self.accelerator.state, "fsdp_plugin", None) is not None
         # Create distant repo and output directory if needed
@@ -223,6 +225,7 @@ class MyRLOOTrainer(RLOOTrainer):
 
         accelerator.print("===training policy===")
         self.state.global_step = 0
+        episode = 0
         start_time = time.time()
         stats_shape = (args.num_ppo_epochs, args.num_mini_batches, args.gradient_accumulation_steps)
         approxkl_stats = torch.zeros(stats_shape, device=device)
@@ -233,13 +236,13 @@ class MyRLOOTrainer(RLOOTrainer):
         entropy_stats = torch.zeros(stats_shape, device=device)
         ratio_stats = torch.zeros(stats_shape, device=device)
         model.train()
-        self.state.max_steps = args.total_episodes
+        self.state.max_steps = args.num_updates + 1
         self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for update in range(1, args.num_updates + 1):
-            self.state.global_step += 1 * args.batch_size
+            episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
             with torch.no_grad():
@@ -402,7 +405,7 @@ class MyRLOOTrainer(RLOOTrainer):
                 mean_kl = kl.sum(1).mean()
                 mean_entropy = (-logprobs).sum(1).mean()
                 mean_non_score_reward = non_score_reward.mean()
-                eps = int(self.state.global_step / (time.time() - start_time))
+                eps = int(episode / (time.time() - start_time))
                 metrics = {}
                 metrics["eps"] = eps
                 metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()
@@ -420,8 +423,8 @@ class MyRLOOTrainer(RLOOTrainer):
                 metrics["val/ratio_var"] = self.accelerator.gather(ratio_stats).var().item()
                 metrics["val/num_eos_tokens"] = (responses == tokenizer.eos_token_id).sum().item()
                 metrics["lr"] = self.lr_scheduler.get_last_lr()[0]
-                metrics["episode"] = self.state.global_step
-                self.state.epoch = self.state.global_step / self.train_dataset_len  # used by self.log
+                metrics["episode"] = episode
+                self.state.epoch = episode / self.train_dataset_len  # used by self.log
                 self.log(metrics)
             del kl, mean_kl, mean_entropy, scores
             torch.cuda.empty_cache()
@@ -429,7 +432,11 @@ class MyRLOOTrainer(RLOOTrainer):
 
             if args.num_sample_generations > 0 and (update - 1) % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)
+            self.state.global_step = update
             self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+            if self.control.should_save:
+                self._save_checkpoint(model, trial=None, metrics=metrics)
+                self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
 

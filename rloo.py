@@ -72,6 +72,7 @@ if __name__ == "__main__":
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"
+        config.num_sample_generations = 0
 
     train_dataset = raw_datasets[args.dataset_train_split]
     eval_dataset = raw_datasets[args.dataset_test_split]

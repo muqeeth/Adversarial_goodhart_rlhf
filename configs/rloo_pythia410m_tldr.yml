@@ -19,4 +19,11 @@ reward_model_path: mnoukhov/pythia410m-rm-tldr
 local_rollout_forward_batch_size: 32
 non_eos_penalty: True
 stop_token: eos
-sample_generations_freq: 100
+# evaluation_strategy: "steps"
+# eval_steps: 0.2
+## save strategy
+save_strategy: steps
+save_steps: 0.2
+hub_strategy: all_checkpoints
+logging_steps: 100
+num_sample_generations: 5

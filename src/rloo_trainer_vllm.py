@@ -208,7 +208,7 @@ def forward(model, query_responses, tokenizer):
     )
 
 
-def prepare_deepspeed(model, per_device_train_batch_size):
+def prepare_deepspeed(model, per_device_train_batch_size, fp16=False, bf16=False):
     import deepspeed
 
     deepspeed_plugin = AcceleratorState().deepspeed_plugin
@@ -217,10 +217,13 @@ def prepare_deepspeed(model, per_device_train_batch_size):
         config_kwargs["train_micro_batch_size_per_gpu"] = per_device_train_batch_size
         config_kwargs = {
             "train_micro_batch_size_per_gpu": config_kwargs["train_micro_batch_size_per_gpu"],
-            "bf16": {"enabled": True},
             "prescale_gradients": False,
             "wall_clock_breakdown": False,
         }
+        if fp16:
+            config_kwargs["fp16"] = {"enabled": True}
+        elif bf16:
+            config_kwargs["bf16"] = {"enabled": True}
     else:
         if hasattr(model, "config"):
             hidden_size = (
@@ -390,8 +393,12 @@ class RLOOTrainer(Trainer):
             print("waiting for vllm to spin up...")
         accelerator.wait_for_everyone()
         if self.is_deepspeed_enabled:
-            self.reward_model = prepare_deepspeed(self.reward_model, args.per_device_train_batch_size)
-            self.ref_policy = prepare_deepspeed(self.ref_policy, args.per_device_train_batch_size)
+            self.reward_model = prepare_deepspeed(
+                self.reward_model, args.per_device_train_batch_size, config.fp16, config.bf16
+            )
+            self.ref_policy = prepare_deepspeed(
+                self.ref_policy, args.per_device_train_batch_size, config.fp16, config.bf16
+            )
         else:
             self.ref_policy = self.ref_policy.to(self.accelerator.device)
             self.reward_model = self.reward_model.to(self.accelerator.device)
@@ -433,8 +440,12 @@ class RLOOTrainer(Trainer):
         g_responses = torch.zeros(
             (args.batch_size * args.rloo_k, args.response_length), device=device, dtype=torch.long
         )
+        self.state.max_steps = args.total_episodes
+        self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
+        self.state.is_local_process_zero = self.is_local_process_zero()
+        self.state.is_world_process_zero = self.is_world_process_zero()
         model.train()
-
+        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for update in range(1, args.num_updates + 1):
             global_step += 1 * args.batch_size
             self.lr_scheduler.step()
@@ -669,6 +680,11 @@ class RLOOTrainer(Trainer):
 
             if args.num_sample_generations > 0 and (update - 1) % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)
+
+            self.state.global_step = global_step
+            self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+
+        self.control = self.callback_handler.on_train_end(args, self.state, self.control)
 
     def generate_completions(self, sampling: bool = False):
         args = self.args

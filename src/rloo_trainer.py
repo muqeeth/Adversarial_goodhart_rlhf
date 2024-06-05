@@ -236,7 +236,7 @@ class MyRLOOTrainer(RLOOTrainer):
         entropy_stats = torch.zeros(stats_shape, device=device)
         ratio_stats = torch.zeros(stats_shape, device=device)
         model.train()
-        self.state.max_steps = args.num_updates + 1
+        self.state.max_steps = args.num_updates
         self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()

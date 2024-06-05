@@ -3,6 +3,8 @@ import sys
 from copy import deepcopy
 from dataclasses import asdict, fields
 
+import torch
+from accelerate.state import AcceleratorState
 from trl.commands.cli_utils import TrlParser, YamlConfigParser
 
 
@@ -97,3 +99,41 @@ class YAMLConfigParser(YamlConfigParser):
                     dataclasses_copy[i] = type(dataclass)(**dict_dataclass)
 
         return dataclasses_copy
+
+
+def prepare_deepspeed(model, per_device_train_batch_size, fp16=False, bf16=False):
+    import deepspeed
+
+    deepspeed_plugin = AcceleratorState().deepspeed_plugin
+    config_kwargs = deepspeed_plugin.deepspeed_config
+    if config_kwargs["zero_optimization"]["stage"] != 3:
+        config_kwargs["train_micro_batch_size_per_gpu"] = per_device_train_batch_size
+        config_kwargs = {
+            "train_micro_batch_size_per_gpu": config_kwargs["train_micro_batch_size_per_gpu"],
+            "prescale_gradients": False,
+            "wall_clock_breakdown": False,
+        }
+        if fp16:
+            config_kwargs["fp16"] = {"enabled": True}
+        elif bf16:
+            config_kwargs["bf16"] = {"enabled": True}
+    else:
+        if hasattr(model, "config"):
+            hidden_size = (
+                max(model.config.hidden_sizes)
+                if getattr(model.config, "hidden_sizes", None)
+                else getattr(model.config, "hidden_size", None)
+            )
+            if hidden_size is not None and config_kwargs["zero_optimization"]["stage"] == 3:
+                # Note that `stage3_prefetch_bucket_size` can produce DeepSpeed messages like: `Invalidate trace cache @ step 0: expected module 1, but got module 0`
+                # This is expected and is not an error, see: https://github.com/microsoft/DeepSpeed/discussions/4081
+                config_kwargs.update(
+                    {
+                        "zero_optimization.reduce_bucket_size": hidden_size * hidden_size,
+                        "zero_optimization.stage3_param_persistence_threshold": 10 * hidden_size,
+                        "zero_optimization.stage3_prefetch_bucket_size": 0,
+                    }
+                )
+    model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
+    model.eval()
+    return model

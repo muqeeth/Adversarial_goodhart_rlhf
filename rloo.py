@@ -11,7 +11,7 @@ from transformers.trainer_callback import ProgressCallback
 from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
-from src.rloo_trainer import MyRLOOTrainer
+from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
 from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
 from src.utils import TRLParser
 
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     if args.vllm:
         TrainerCls = RLOOTrainerVLLM
     else:
-        TrainerCls = MyRLOOTrainer
+        TrainerCls = RLOOTrainer
 
     trainer = TrainerCls(
         config=config,

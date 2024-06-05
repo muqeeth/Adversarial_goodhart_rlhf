@@ -74,9 +74,9 @@ class RLOOConfig(TrainingArguments):
     """the name of the pretrained model to use"""
     response_length: int = 53
     """the length of the response"""
-    truncate_token: Optional[Literal["eos"]] = None
+    stop_token: Optional[Literal["eos"]] = None
     """the truncate token"""
-    truncate_token_id: Optional[int] = None
+    stop_token_id: Optional[int] = None
     """the truncation token id"""
     temperature: float = 0.7
     """the sampling temperature"""
@@ -90,8 +90,8 @@ class RLOOConfig(TrainingArguments):
     """the path to the reward model"""
     sft_model_path: str = "EleutherAI/pythia-160m"
     """the path to the sft model"""
-    sft_model_revision: str = "main"
-    """the revision of the sft model"""
+    # sft_model_revision: str = "main"
+    # """the revision of the sft model"""
 
     # ppo config
     num_ppo_epochs: int = 4
@@ -188,7 +188,7 @@ def first_true_indices(bools, dtype=torch.long):
 
 
 def truncate_response(config, tokenizer, responses):
-    trunc_idxs = first_true_indices(responses == config.truncate_token_id).unsqueeze(-1)
+    trunc_idxs = first_true_indices(responses == config.stop_token_id).unsqueeze(-1)
     new_size = [1] * (len(responses.size()) - 1) + [responses.shape[1]]
     idxs = torch.arange(responses.shape[1], device=responses.device).view(*new_size)
     postprocessed_responses = torch.masked_fill(responses, idxs > trunc_idxs, tokenizer.pad_token_id)
@@ -311,8 +311,8 @@ class RLOOTrainer(Trainer):
         #########
         for module in [policy, ref_policy, reward_model]:
             disable_dropout(module)
-        if args.truncate_token and args.truncate_token == "eos":
-            args.truncate_token_id = tokenizer.eos_token_id
+        if args.stop_token and args.stop_token == "eos":
+            args.stop_token_id = tokenizer.eos_token_id
         self.model = policy
         self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
 
@@ -379,10 +379,10 @@ class RLOOTrainer(Trainer):
         if accelerator.is_main_process:
             self.llm = SingleGPULLM(
                 model=args.sft_model_path,
-                revision=args.sft_model_revision,
-                tokenizer_revision=args.sft_model_revision,
+                # revision=args.sft_model_revision,
+                # tokenizer_revision=args.sft_model_revision,
                 tensor_parallel_size=1,
-                device="cuda:7",
+                device=f"cuda:{accelerator.num_processes}",
             )
             self.llmp = self.llm.llm_engine.model_executor.driver_worker.model_runner.model
             print("🔥🔥🔥 vllm loaded")
@@ -434,6 +434,7 @@ class RLOOTrainer(Trainer):
             (args.batch_size * args.rloo_k, args.response_length), device=device, dtype=torch.long
         )
         model.train()
+
         for update in range(1, args.num_updates + 1):
             global_step += 1 * args.batch_size
             self.lr_scheduler.step()
@@ -508,7 +509,7 @@ class RLOOTrainer(Trainer):
 
                         # Response Processing 1. truncate response after the first occurrence of `truncate_token_id`
                         postprocessed_response = response
-                        if args.truncate_token_id:
+                        if args.stop_token_id:
                             postprocessed_response = truncate_response(args, tokenizer, response)
 
                         # Response Processing 2. run reward model on the truncated responses
@@ -734,7 +735,7 @@ class RLOOTrainer(Trainer):
 
                 response = queries_responses[:, context_length:]
                 postprocessed_response = response
-                if args.truncate_token_id is not None:  # handle the edge case when truncate_token_id exists but is 0
+                if args.stop_token_id is not None:  # handle the edge case when truncate_token_id exists but is 0
                     postprocessed_response = truncate_response(args, self.tokenizer, response)
                 table["query"].extend(gather_object(self.tokenizer.batch_decode(queries, skip_special_tokens=True)))
                 table["model response"].extend(gather_object(self.tokenizer.batch_decode(postprocessed_response)))

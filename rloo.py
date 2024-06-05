@@ -12,6 +12,7 @@ from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
 from src.rloo_trainer import MyRLOOTrainer
+from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
 from src.utils import TRLParser
 
 
@@ -24,6 +25,7 @@ class ScriptArguments:
     # output_model_name: str = field(default="", metadata={"help": "model name to upload"})
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     config: str = field(default=None, metadata={"help": "Path to the optional config file"})
+    vllm: bool = field(default=False)
 
 
 def prepare_dataset(dataset, tokenizer):
@@ -83,7 +85,13 @@ if __name__ == "__main__":
     ################
     # Training
     ################
-    trainer = MyRLOOTrainer(
+
+    if args.vllm:
+        TrainerCls = RLOOTrainerVLLM
+    else:
+        TrainerCls = MyRLOOTrainer
+
+    trainer = TrainerCls(
         config=config,
         tokenizer=tokenizer,
         policy=policy,

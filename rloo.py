@@ -1,5 +1,7 @@
 import multiprocessing
+import os
 from dataclasses import dataclass, field
+from typing import Optional
 
 from datasets import load_dataset
 from transformers import (
@@ -26,6 +28,7 @@ class ScriptArguments:
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     config: str = field(default=None, metadata={"help": "Path to the optional config file"})
     vllm: bool = field(default=False)
+    wandb_run_id: Optional[str] = field(default=None)
 
 
 def prepare_dataset(dataset, tokenizer):
@@ -49,6 +52,10 @@ def prepare_dataset(dataset, tokenizer):
 if __name__ == "__main__":
     parser = TRLParser((ScriptArguments, RLOOConfig, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
+
+    if args.wandb_run_id == "snow":
+        wandb_run_id = os.path.basename(os.getcwd())
+        os.environ["WANDB_RUN_ID"] = wandb_run_id + "_" + config.run_name
 
     ################
     # Model & Tokenizer

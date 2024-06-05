@@ -1,4 +1,5 @@
-task_type: "tldr"
+task_type: tldr
+wandb_run_id: snow
 output_dir: rloo_pythia410m_tldr
 run_name: rloo_pythia410m_tldr
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144

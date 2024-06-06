@@ -1,4 +1,5 @@
 import gc
+import math
 import os
 import time
 from collections import defaultdict
@@ -22,7 +23,8 @@ from transformers import (
     TrainerState,
 )
 from transformers.integrations import get_reporting_integration_callbacks
-from transformers.trainer_callback import CallbackHandler, DefaultFlowCallback
+from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
+from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.models.utils import unwrap_model_for_generation
 from trl.trainer.rloo_config import RLOOConfig
 from trl.trainer.rloo_trainer import INVALID_LOGPROB, RLOOTrainer
@@ -77,7 +79,6 @@ class MyRLOOTrainer(RLOOTrainer):
         self.data_collator = data_collator
         self.eval_dataset = eval_dataset
         self.optimizer, self.lr_scheduler = optimizers
-        self.callbacks = callbacks
 
         #########
         # calculate various batch sizes
@@ -126,6 +127,7 @@ class MyRLOOTrainer(RLOOTrainer):
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
         self.model = policy
+        self.model_wrapped = policy
         self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
 
         #########
@@ -135,16 +137,17 @@ class MyRLOOTrainer(RLOOTrainer):
             is_local_process_zero=self.is_local_process_zero(),
             is_world_process_zero=self.is_world_process_zero(),
         )
-        DEFAULT_CALLBACKS = [DefaultFlowCallback]
+
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
-        self.callbacks = default_callbacks if self.callbacks is None else default_callbacks + self.callbacks
+        callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
-            self.callbacks,
+            callbacks,
             self.model,
             self.tokenizer,
             self.optimizer,
             self.lr_scheduler,
         )
+        self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
         self.control = TrainerControl()
 
         self.current_flos = 0
@@ -237,6 +240,24 @@ class MyRLOOTrainer(RLOOTrainer):
         self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()
+
+        # Compute absolute values for logging, eval, and save if given as ratio
+        if args.logging_steps is not None:
+            if args.logging_steps < 1:
+                self.state.logging_steps = math.ceil(self.state.max_steps * args.logging_steps)
+            else:
+                self.state.logging_steps = args.logging_steps
+        if args.eval_steps is not None:
+            if args.eval_steps < 1:
+                self.state.eval_steps = math.ceil(self.state.max_steps * args.eval_steps)
+            else:
+                self.state.eval_steps = args.eval_steps
+        if args.save_steps is not None:
+            if args.save_steps < 1:
+                self.state.save_steps = math.ceil(self.state.max_steps * args.save_steps)
+            else:
+                self.state.save_steps = args.save_steps
+
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for update in range(1, args.num_updates + 1):
             episode += 1 * args.batch_size
@@ -432,6 +453,7 @@ class MyRLOOTrainer(RLOOTrainer):
             self.state.global_step = update
             self.control = self.callback_handler.on_step_end(args, self.state, self.control)
             if self.control.should_save:
+                print("saving")
                 self._save_checkpoint(model, trial=None, metrics=metrics)
                 self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 

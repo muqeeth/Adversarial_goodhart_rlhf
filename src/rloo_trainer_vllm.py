@@ -308,7 +308,7 @@ class RLOOTrainer(Trainer):
                         del output, logits, all_logprob
                         torch.cuda.empty_cache()
 
-                        ref_output = forward(ref_policy, query_response, tokenizer)
+                        ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
                         ref_logits = ref_output.logits[:, context_length - 1 : -1]
                         ref_logits /= args.temperature + 1e-7
                         ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
@@ -326,7 +326,9 @@ class RLOOTrainer(Trainer):
                         # Response Processing 2. run reward model on the truncated responses
                         postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                         sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
-                        _, score, _ = get_reward(reward_model, postprocessed_query_response, tokenizer, context_length)
+                        _, score, _ = get_reward(
+                            reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
+                        )
 
                         query_responses.append(query_response)
                         responses.append(response)
@@ -395,7 +397,7 @@ class RLOOTrainer(Trainer):
                             mb_query_responses = query_responses[micro_batch_inds]
                             mb_logprobs = logprobs[micro_batch_inds]
 
-                            output = forward(model, mb_query_responses, tokenizer)
+                            output = forward(model, mb_query_responses, tokenizer.pad_token_id)
                             logits = output.logits[:, context_length - 1 : -1]
                             logits /= args.temperature + 1e-7
                             new_all_logprobs = F.log_softmax(logits, dim=-1)
@@ -558,7 +560,7 @@ class RLOOTrainer(Trainer):
 
                 postprocessed_query_response = torch.cat((queries, postprocessed_response), 1)
                 _, score, _ = get_reward(
-                    self.reward_model, postprocessed_query_response, self.tokenizer, context_length
+                    self.reward_model, postprocessed_query_response, self.tokenizer.pad_token_id, context_length
                 )
                 table["score"].extend(self.accelerator.gather(score).float().cpu().numpy())
 

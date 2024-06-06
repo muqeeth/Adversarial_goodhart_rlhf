@@ -1,4 +1,4 @@
-trl==0.8.6
+trl==0.9.4
 peft==0.10.0
 wandb
 vllm==0.4.1

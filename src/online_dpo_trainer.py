@@ -42,7 +42,7 @@ from trl.trainer.utils import (
 from src.utils import prepare_deepspeed
 
 
-class MyRLOOTrainer(RLOOTrainer):
+class OnlineDPOTrainer(RLOOTrainer):
     def __init__(
         self,
         config: RLOOConfig,

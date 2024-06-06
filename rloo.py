@@ -9,10 +9,10 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
-from transformers.trainer_callback import ProgressCallback
 from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
+from src.online_dpo_trainer import OnlineDPOTrainer
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
 from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
 from src.utils import TRLParser
@@ -28,6 +28,7 @@ class ScriptArguments:
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     config: str = field(default=None, metadata={"help": "Path to the optional config file"})
     vllm: bool = field(default=False)
+    online_dpo: bool = field(default=False)
     wandb_run_id: Optional[str] = field(default=None)
 
 
@@ -96,6 +97,8 @@ if __name__ == "__main__":
 
     if args.vllm:
         TrainerCls = RLOOTrainerVLLM
+    elif args.online_dpo:
+        TrainerCls = OnlineDPOTrainer
     else:
         TrainerCls = RLOOTrainer
 

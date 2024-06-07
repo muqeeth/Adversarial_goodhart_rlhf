@@ -26,6 +26,7 @@ from transformers.integrations import get_reporting_integration_callbacks
 from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.models.utils import unwrap_model_for_generation
+from trl.trainer.dpo_trainer import DPOTrainer
 from trl.trainer.rloo_config import RLOOConfig
 from trl.trainer.rloo_trainer import INVALID_LOGPROB, RLOOTrainer
 from trl.trainer.utils import (
@@ -42,7 +43,7 @@ from trl.trainer.utils import (
 from src.utils import prepare_deepspeed
 
 
-class OnlineDPOTrainer(RLOOTrainer):
+class OnlineDPOTrainer(RLOOTrainer, DPOTrainer):
     def __init__(
         self,
         config: RLOOConfig,
@@ -113,6 +114,8 @@ class OnlineDPOTrainer(RLOOTrainer):
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
             self.sample_generations_freq = max(1, args.num_updates // args.num_sample_generations)
+
+        assert args.rloo_k == 2, "currently only support 2"
         self.local_dataloader_batch_size = exact_div(
             args.local_batch_size,
             args.rloo_k,
@@ -198,6 +201,8 @@ class OnlineDPOTrainer(RLOOTrainer):
             self.ref_policy = self.ref_policy.to(self.accelerator.device)
             self.reward_model = self.reward_model.to(self.accelerator.device)
 
+        self.ref_model = self.ref_policy
+
     def train(self):
         args = self.args
         accelerator = self.accelerator
@@ -270,7 +275,6 @@ class OnlineDPOTrainer(RLOOTrainer):
                 query_responses = []
                 responses = []
                 postprocessed_responses = []
-                logprobs = []
                 ref_logprobs = []
                 scores = []
                 sequence_lengths = []
@@ -284,12 +288,6 @@ class OnlineDPOTrainer(RLOOTrainer):
                             generation_config,
                         )
                         response = query_response[:, context_length:]
-
-                        # use the logits during generation directly, instead of using the following
-                        all_logprob = F.log_softmax(logits, dim=-1)
-                        logprob = torch.gather(all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
-                        del logits, all_logprob
-                        torch.cuda.empty_cache()
 
                         ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
                         ref_logits = ref_output.logits[:, context_length - 1 : -1]
@@ -316,18 +314,15 @@ class OnlineDPOTrainer(RLOOTrainer):
                         query_responses.append(query_response)
                         responses.append(response)
                         postprocessed_responses.append(postprocessed_response)
-                        logprobs.append(logprob)
-                        ref_logprobs.append(ref_logprob)
                         sequence_lengths.append(sequence_length)
+                        ref_logprobs.append(ref_logprob)
                         scores.append(score)
                 query_responses = torch.cat(query_responses, 0)
                 responses = torch.cat(responses, 0)
                 postprocessed_responses = torch.cat(postprocessed_responses, 0)
-                logprobs = torch.cat(logprobs, 0)
-                ref_logprobs = torch.cat(ref_logprobs, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 scores = torch.cat(scores, 0)
-                del (logprob, ref_logprob, score)
+                del score
                 torch.cuda.empty_cache()
                 gc.collect()
 
@@ -339,29 +334,28 @@ class OnlineDPOTrainer(RLOOTrainer):
                     scores = torch.where(contain_eos_token, scores, torch.full_like(scores, args.penalty_reward_value))
                 # accelerator.print(f"{scores=}, {(contain_eos_token.sum() / len(contain_eos_token))=}")
 
-                # be very careful with `padding_mask_p1`; see https://excalidraw.com/#json=LWnzG4w2k5DjF_EOL_xPt,e2w3a-hFJ_gX5vOfeyXGTw
                 response_idxs = torch.arange(responses.shape[1], device=responses.device).repeat(responses.shape[0], 1)
                 padding_mask = response_idxs > sequence_lengths.unsqueeze(1)
-                logprobs = torch.masked_fill(logprobs, padding_mask, INVALID_LOGPROB)
                 ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
 
-                # 4. compute rewards
-                kl = logprobs - ref_logprobs
-                non_score_reward = (-args.kl_coef * kl).sum(1)
-                rlhf_reward = scores + non_score_reward
+                num_examples = scores.shape[0] / 2
+                first_half = scores[:num_examples]
+                second_half = scores[num_examples:]
 
-                # vectorized RLOO advantages implementation
-                rlhf_reward = rlhf_reward.reshape(args.rloo_k, -1)
-                baseline = (rlhf_reward.sum(0) - rlhf_reward) / (args.rloo_k - 1)
-                advantages = rlhf_reward - baseline
-                advantages = advantages.flatten()
+                chosen_indices = torch.where(
+                    first_half >= second_half, torch.arange(num_examples), torch.arange(num_examples) + num_examples
+                )
+                rejected_indices = torch.where(
+                    first_half < second_half, torch.arange(num_examples), torch.arange(num_examples) + num_examples
+                )
                 torch.cuda.empty_cache()
 
             # Do multiple epochs of PPO training, with a fresh random shuffle in each epoch
             for ppo_epoch_idx in range(args.num_ppo_epochs):
-                b_inds = np.random.permutation(args.local_batch_size)
+                # b_inds = np.random.permutation(args.local_batch_size / 2)
+                b_inds = np.arange(args.local_batch_size / 2)
                 minibatch_idx = 0
-                for mini_batch_start in range(0, args.local_batch_size, args.local_mini_batch_size):
+                for mini_batch_start in range(0, args.local_batch_size / 2, args.local_mini_batch_size):
                     mini_batch_end = mini_batch_start + args.local_mini_batch_size
                     mini_batch_inds = b_inds[mini_batch_start:mini_batch_end]
                     gradient_accumulation_idx = 0
@@ -369,44 +363,93 @@ class OnlineDPOTrainer(RLOOTrainer):
                         with accelerator.accumulate(model):
                             micro_batch_end = micro_batch_start + args.per_device_train_batch_size
                             micro_batch_inds = mini_batch_inds[micro_batch_start:micro_batch_end]
-                            mb_advantage = advantages[micro_batch_inds]
-                            mb_responses = responses[micro_batch_inds]
-                            mb_query_responses = query_responses[micro_batch_inds]
-                            mb_logprobs = logprobs[micro_batch_inds]
 
-                            output = forward(model, mb_query_responses, tokenizer.pad_token_id)
+                            ## chosen
+                            chosen_mb_inds = chosen_indices[micro_batch_inds]
+                            chosen_responses = responses[chosen_mb_inds]
+                            chosen_query_responses = query_responses[chosen_mb_inds]
+
+                            output = forward(model, chosen_query_responses, tokenizer.pad_token_id)
                             logits = output.logits[:, context_length - 1 : -1]
                             logits /= args.temperature + 1e-7
-                            new_all_logprobs = F.log_softmax(logits, dim=-1)
-                            new_logprobs = torch.gather(new_all_logprobs, 2, mb_responses.unsqueeze(-1)).squeeze(-1)
-                            new_logprobs = torch.masked_fill(
-                                new_logprobs, padding_mask[micro_batch_inds], INVALID_LOGPROB
+                            chosen_all_logprobs = F.log_softmax(logits, dim=-1)
+                            chosen_logprobs = torch.gather(
+                                chosen_all_logprobs, 2, chosen_responses.unsqueeze(-1)
+                            ).squeeze(-1)
+                            chosen_logprobs = torch.masked_fill(
+                                chosen_logprobs, padding_mask[chosen_mb_inds], INVALID_LOGPROB
                             )
-                            new_ratio = (new_logprobs - mb_logprobs).exp()
-                            new_logprobs = new_logprobs.sum(1)
-                            mb_logprobs = mb_logprobs.sum(1)
-                            logprobs_diff = new_logprobs - mb_logprobs
-                            ratio = torch.exp(logprobs_diff)
-                            pg_losses = -mb_advantage * ratio
-                            pg_losses2 = -mb_advantage * torch.clamp(ratio, 1.0 - args.cliprange, 1.0 + args.cliprange)
-                            pg_loss_max = torch.max(pg_losses, pg_losses2)
-                            pg_loss = pg_loss_max.mean()
-                            loss = pg_loss
+                            # chosen_ratio = (chosen_logprobs -chosen_logprobs).exp()
+                            chosen_ref_logprobs = ref_logprobs[chosen_mb_inds]
+                            chosen_logprob_sum = chosen_logprobs.sum(1)
+                            chosen_ref_logprob_sum = chosen_ref_logprobs.sum(1)
+
+                            ## rejected
+                            rejected_mb_inds = rejected_indices[micro_batch_inds]
+                            rejected_responses = responses[rejected_mb_inds]
+                            rejected_query_responses = query_responses[rejected_mb_inds]
+
+                            output = forward(model, rejected_query_responses, tokenizer.pad_token_id)
+                            logits = output.logits[:, context_length - 1 : -1]
+                            logits /= args.temperature + 1e-7
+                            rejected_all_logprobs = F.log_softmax(logits, dim=-1)
+                            rejected_logprobs = torch.gather(
+                                rejected_all_logprobs, 2, rejected_responses.unsqueeze(-1)
+                            ).squeeze(-1)
+                            rejected_logprobs = torch.masked_fill(
+                                rejected_logprobs, padding_mask[rejected_mb_inds], INVALID_LOGPROB
+                            )
+                            # rejected_ratio = (rejected_logprobs -rejected_logprobs).exp()
+                            rejected_ref_logprobs = ref_logprobs[rejected_mb_inds]
+                            rejected_logprob_sum = rejected_logprobs.sum(1)
+                            rejeced_ref_logprob_sum = rejected_ref_logprobs.sum(1)
+
+                            ## TODO
+                            # dpo loss
+                            # ipo loss
+
+                            # padding mask includes prompt?
+
+                            # mb_responses = responses[micro_batch_inds]
+                            # mb_query_responses = query_responses[micro_batch_inds]
+                            #
+                            # output = forward(model, mb_query_responses, tokenizer.pad_token_id)
+                            # logits = output.logits[:, context_length - 1 : -1]
+                            # logits /= args.temperature + 1e-7
+                            # new_all_logprobs = F.log_softmax(logits, dim=-1)
+                            # new_logprobs = torch.gather(new_all_logprobs, 2, mb_responses.unsqueeze(-1)).squeeze(-1)
+                            # new_logprobs = torch.masked_fill(
+                            #     new_logprobs, padding_mask[micro_batch_inds], INVALID_LOGPROB
+                            # )
+                            # # new_ratio = (new_logprobs - mb_logprobs).exp()
+                            # mb_ref_logprobs = ref_logprobs[micro_batch_inds]
+                            # new_logprob_sum = new_logprobs.sum(1)
+                            # ref_logprob_sum = mb_ref_logprobs.sum(1)
+
+                            # above one set of logprobs
+
+                            # logprobs_diff = new_logprobs - mb_logprobs
+                            # ratio = torch.exp(logprobs_diff)
+                            # pg_losses = -mb_advantage * ratio
+                            # pg_losses2 = -mb_advantage * torch.clamp(ratio, 1.0 - args.cliprange, 1.0 + args.cliprange)
+                            # pg_loss_max = torch.max(pg_losses, pg_losses2)
+                            # pg_loss = pg_loss_max.mean()
+                            # loss = pg_loss
                             accelerator.backward(loss)
                             optimizer.step()
                             optimizer.zero_grad()
-                            with torch.no_grad():
-                                pg_clipfrac = (pg_losses2 > pg_losses).float().mean()
-                                prob_dist = torch.nn.functional.softmax(logits, dim=-1)
-                                entropy = torch.logsumexp(logits, dim=-1) - torch.sum(prob_dist * logits, dim=-1)
-                                approxkl = 0.5 * (logprobs_diff**2).mean()
-                                approxkl_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = approxkl
-                                pg_clipfrac_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = (
-                                    pg_clipfrac
-                                )
-                                pg_loss_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = pg_loss
-                                entropy_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = entropy.mean()
-                                ratio_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = new_ratio.mean()
+                            # with torch.no_grad():
+                            #     pg_clipfrac = (pg_losses2 > pg_losses).float().mean()
+                            #     prob_dist = torch.nn.functional.softmax(logits, dim=-1)
+                            #     entropy = torch.logsumexp(logits, dim=-1) - torch.sum(prob_dist * logits, dim=-1)
+                            #     approxkl = 0.5 * (logprobs_diff**2).mean()
+                            #     approxkl_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = approxkl
+                            #     pg_clipfrac_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = (
+                            #         pg_clipfrac
+                            #     )
+                            #     pg_loss_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = pg_loss
+                            #     entropy_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = entropy.mean()
+                            #     ratio_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = new_ratio.mean()
                         gradient_accumulation_idx += 1
                     minibatch_idx += 1
                     # del everything and empty cache

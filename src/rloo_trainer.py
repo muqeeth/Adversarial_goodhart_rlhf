@@ -127,7 +127,6 @@ class MyRLOOTrainer(RLOOTrainer):
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
         self.model = policy
-        self.model_wrapped = policy
         self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
 
         #########
@@ -203,6 +202,7 @@ class MyRLOOTrainer(RLOOTrainer):
         accelerator = self.accelerator
         optimizer = self.optimizer
         model = self.model
+        self.model_wrapped = self.model
         ref_policy = self.ref_policy
         reward_model = self.reward_model
         tokenizer = self.tokenizer

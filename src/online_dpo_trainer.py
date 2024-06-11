@@ -354,13 +354,13 @@ class OnlineDPOTrainer(RLOOTrainer):
                     scores = torch.where(contain_eos_token, scores, torch.full_like(scores, args.penalty_reward_value))
                 # accelerator.print(f"{scores=}, {(contain_eos_token.sum() / len(contain_eos_token))=}")
 
-                kl = logprobs - ref_logprobs
-
                 # be very careful with `padding_mask_p1`; see https://excalidraw.com/#json=LWnzG4w2k5DjF_EOL_xPt,e2w3a-hFJ_gX5vOfeyXGTw
                 response_idxs = torch.arange(responses.shape[1], device=responses.device).repeat(responses.shape[0], 1)
                 padding_mask = response_idxs > sequence_lengths.unsqueeze(1)
                 logprobs = torch.masked_fill(logprobs, padding_mask, INVALID_LOGPROB)
                 ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
+
+                kl = logprobs - ref_logprobs
 
                 # num_examples should be same as args.local_batch_size
                 num_examples = scores.size(0) // 2

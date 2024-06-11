@@ -148,7 +148,8 @@ VLLM ?= 0
 
 _CONDA_PREFIX := $(CONDA_EXE) run -n $(ENV) --no-capture-output
 ifeq ($(NPROC), 1)
-	_ACCELERATE_PREFIX := accelerate launch --mixed_precision=$(FP) --config_file $(ACCELERATE_LOCAL_CFG)
+	# _ACCELERATE_PREFIX := accelerate launch --mixed_precision=$(FP) --config_file $(ACCELERATE_LOCAL_CFG)
+	_ACCELERATE_PREFIX := accelerate launch --mixed_precision=$(FP) --num_processes $(NPROC)
 else
 	_ACCELERATE_PREFIX := accelerate launch --multi_gpu --mixed_precision=$(FP) --num_processes $(NPROC)
 endif

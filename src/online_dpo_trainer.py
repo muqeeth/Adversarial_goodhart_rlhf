@@ -397,10 +397,21 @@ class OnlineDPOTrainer(RLOOTrainer):
                             ## chosen
                             chosen_mb_inds = chosen_indices[micro_batch_inds]
                             chosen_responses = responses[chosen_mb_inds]
-                            chosen_query_responses = query_responses[chosen_mb_inds]
 
-                            chosen_output = forward(model, chosen_query_responses, tokenizer.pad_token_id)
-                            chosen_logits = chosen_output.logits[:, context_length - 1 : -1]
+                            ## rejected
+                            rejected_mb_inds = rejected_indices[micro_batch_inds]
+                            rejected_responses = responses[rejected_mb_inds]
+
+                            concat_mb_inds = torch.cat((chosen_mb_inds, rejected_mb_inds), dim=0)
+                            concat_query_responses = query_responses[concat_mb_inds]
+
+                            concat_output = forward(model, concat_query_responses, tokenizer.pad_token_id)
+                            num_examples = chosen_mb_inds.shape[0]
+                            chosen_logits = concat_output.logits[:num_examples]
+                            rejected_logits = concat_output.logits[num_examples:]
+
+                            # chosen
+                            chosen_logits = chosen_logits[:, context_length - 1 : -1]
                             chosen_logits /= args.temperature + 1e-7
                             chosen_all_logprobs = F.log_softmax(chosen_logits, dim=-1)
                             chosen_logprobs = torch.gather(
@@ -409,18 +420,12 @@ class OnlineDPOTrainer(RLOOTrainer):
                             chosen_logprobs = torch.masked_fill(
                                 chosen_logprobs, padding_mask[chosen_mb_inds], INVALID_LOGPROB
                             )
-                            # chosen_ratio = (chosen_logprobs -chosen_logprobs).exp()
                             chosen_ref_logprobs = ref_logprobs[chosen_mb_inds]
                             chosen_logprobs_sum = (chosen_logprobs * ~padding_mask[chosen_mb_inds]).sum(1)
                             chosen_ref_logprobs_sum = (chosen_ref_logprobs * ~padding_mask[chosen_mb_inds]).sum(1)
 
-                            ## rejected
-                            rejected_mb_inds = rejected_indices[micro_batch_inds]
-                            rejected_responses = responses[rejected_mb_inds]
-                            rejected_query_responses = query_responses[rejected_mb_inds]
-
-                            rejected_output = forward(model, rejected_query_responses, tokenizer.pad_token_id)
-                            rejected_logits = rejected_output.logits[:, context_length - 1 : -1]
+                            # rejected
+                            rejected_logits = rejected_logits[:, context_length - 1 : -1]
                             rejected_logits /= args.temperature + 1e-7
                             rejected_all_logprobs = F.log_softmax(rejected_logits, dim=-1)
                             rejected_logprobs = torch.gather(
@@ -429,7 +434,6 @@ class OnlineDPOTrainer(RLOOTrainer):
                             rejected_logprobs = torch.masked_fill(
                                 rejected_logprobs, padding_mask[rejected_mb_inds], INVALID_LOGPROB
                             )
-                            # rejected_ratio = (rejected_logprobs -rejected_logprobs).exp()
                             rejected_ref_logprobs = ref_logprobs[rejected_mb_inds]
                             rejected_logprobs_sum = (rejected_logprobs * ~padding_mask[rejected_mb_inds]).sum(1)
                             rejected_ref_logprobs_sum = (rejected_ref_logprobs * ~padding_mask[rejected_mb_inds]).sum(
@@ -469,10 +473,10 @@ class OnlineDPOTrainer(RLOOTrainer):
                     # fmt: off
                     del (
                         loss, logits,
-                        chosen_output, rejected_output,
+                        concat_output, concat_query_responses,
+                        chosen_logits, rejected_logits,
                         chosen_logprobs, rejected_logprobs,
                         chosen_responses, rejected_responses,
-                        chosen_query_responses, rejected_query_responses,
                     )
                     # fmt: on
                     torch.cuda.empty_cache()

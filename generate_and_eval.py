@@ -14,7 +14,7 @@ from transformers import (
     AutoTokenizer,
     pipeline,
 )
-from vllm import LLM, SamplingParams
+from vllm import SamplingParams, SingleGPULLM
 from vllm.distributed.parallel_state import destroy_model_parallel
 
 import wandb
@@ -110,12 +110,14 @@ def generate(script_args):
             del merged
             model_name_or_path = model_save_path
 
-        llm = LLM(
+        assert script_args.num_gpus == 1
+        llm = SingleGPULLM(
             model=model_name_or_path,
             tokenizer=script_args.tokenizer_name,
             dtype=script_args.gen_dtype,
-            tensor_parallel_size=script_args.num_gpus,
             trust_remote_code=True,
+            tensor_parallel_size=1,
+            device="cuda:0",
         )
 
         generations = llm.generate(prompts, sampling_params)
@@ -132,7 +134,7 @@ def generate(script_args):
         del llm
         gc.collect()
         torch.cuda.empty_cache()
-        torch.distributed.destroy_process_group()
+        # torch.distributed.destroy_process_group()
 
     if script_args.save_generations:
         # TODO add hash to dataset path

@@ -1,3 +1,4 @@
+import inspect
 import logging
 import sys
 from copy import deepcopy
@@ -92,11 +93,10 @@ class YAMLConfigParser(YamlConfigParser):
 
                 # Re-init `TrainingArguments` to handle all post-processing correctly
                 if is_hf_training_args:
-                    # init_signature = list(inspect.signature(TrainingArguments.__init__).parameters)
+                    init_signature = list(inspect.signature(type(dataclass).__init__).parameters)
                     dict_dataclass = asdict(dataclasses_copy[i])
-                    dict_dataclass.pop("_n_gpu")
-                    # new_dict_dataclass = {k: v for k, v in dict_dataclass.items() if k in init_signature}
-                    dataclasses_copy[i] = type(dataclass)(**dict_dataclass)
+                    new_dict_dataclass = {k: v for k, v in dict_dataclass.items() if k in init_signature}
+                    dataclasses_copy[i] = type(dataclass)(**new_dict_dataclass)
 
         return dataclasses_copy
 

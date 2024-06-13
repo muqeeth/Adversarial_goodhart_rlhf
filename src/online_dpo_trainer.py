@@ -414,6 +414,8 @@ class OnlineDPOTrainer(RLOOTrainer):
                     first_half < second_half, num_examples_range.clone(), num_examples_range.clone() + num_examples
                 )
 
+                scores_margin = scores[chosen_indices] - scores[rejected_indices]
+
                 if self.args.save_generations:
                     decoded_queries = tokenizer.batch_decode(queries[:num_examples], skip_special_tokens=True)
                     decoded_chosen = tokenizer.batch_decode(postprocessed_responses[chosen_indices])
@@ -558,6 +560,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                 metrics["objective/non_score_reward"] = self.accelerator.gather(mean_non_score_reward).mean().item()
                 metrics["objective/rlhf_reward"] = self.accelerator.gather(rlhf_reward).mean().item()
                 metrics["objective/scores"] = self.accelerator.gather(scores.mean()).mean().item()
+                metrics["objective/scores_margin"] = self.accelerator.gather(scores_margin.mean()).mean().item()
                 metrics["rewards/chosen"] = chosen_rewards.mean().item()
                 metrics["rewards/rejected"] = rejected_rewards.mean().item()
                 metrics["rewards/accuracies"] = (chosen_rewards > rejected_rewards).float().mean().item()
@@ -577,6 +580,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                 mean_kl,
                 mean_entropy,
                 scores,
+                scores_margin,
                 all_chosen_rewards,
                 all_chosen_logprobs,
                 all_rejected_rewards,

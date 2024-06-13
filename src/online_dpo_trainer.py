@@ -3,7 +3,8 @@ import math
 import os
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import broadcast, gather_object
+from accelerate.utils import gather_object
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import (
@@ -26,7 +27,6 @@ from transformers.integrations import get_reporting_integration_callbacks
 from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.models.utils import unwrap_model_for_generation
-from trl.trainer.dpo_config import DPOConfig
 from trl.trainer.rloo_config import RLOOConfig
 from trl.trainer.rloo_trainer import INVALID_LOGPROB, RLOOTrainer
 from trl.trainer.utils import (
@@ -43,8 +43,37 @@ from trl.trainer.utils import (
 from src.utils import prepare_deepspeed
 
 
-class OnlineDPOConfig(RLOOConfig, DPOConfig):
-    pass
+@dataclass
+class OnlineDPOConfig(RLOOConfig):
+    save_generations: bool = False
+
+    # DPO stuff w/o max_length
+    beta: float = 0.1
+    label_smoothing: float = 0
+    loss_type: Literal["sigmoid", "hinge", "ipo", "kto_pair", "bco_pair", "sppo_hard", "nca_pair", "robust"] = (
+        "sigmoid"
+    )
+    label_pad_token_id: int = -100
+    padding_value: int = 0
+    truncation_mode: str = "keep_end"
+    # max_length: Optional[int] = None
+    max_prompt_length: Optional[int] = None
+    max_target_length: Optional[int] = None
+    is_encoder_decoder: Optional[bool] = None
+    disable_dropout: bool = True
+    generate_during_eval: bool = False
+    precompute_ref_log_probs: bool = False
+    dataset_num_proc: Optional[int] = None
+    model_init_kwargs: Optional[Dict] = None
+    ref_model_init_kwargs: Optional[Dict] = None
+    model_adapter_name: Optional[str] = None
+    ref_adapter_name: Optional[str] = None
+    reference_free: bool = False
+    force_use_ref_model: bool = False
+    sync_ref_model: bool = False
+    ref_model_mixup_alpha: float = 0.9
+    ref_model_sync_steps: int = 64
+    rpo_alpha: Optional[float] = None
 
 
 class OnlineDPOTrainer(RLOOTrainer):
@@ -172,6 +201,7 @@ class OnlineDPOTrainer(RLOOTrainer):
             self.init_hf_repo()
         if self.args.should_save:
             os.makedirs(self.args.output_dir, exist_ok=True)
+
         self.backup_model = None
 
         #########
@@ -275,6 +305,12 @@ class OnlineDPOTrainer(RLOOTrainer):
                 self.state.save_steps = args.save_steps
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
+        saved_data = {
+            "prompt": [],
+            "chosen": [],
+            "rejected": [],
+        }
+
         for update in range(1, args.num_updates + 1):
             episode += 1 * args.batch_size
             self.lr_scheduler.step()
@@ -375,6 +411,20 @@ class OnlineDPOTrainer(RLOOTrainer):
                 rejected_indices = torch.where(
                     first_half < second_half, num_examples_range.clone(), num_examples_range.clone() + num_examples
                 )
+
+                if self.args.save_generations:
+                    decoded_queries = tokenizer.batch_decode(queries[:num_examples], skip_special_tokens=True)
+                    decoded_chosen = tokenizer.batch_decode(postprocessed_response[chosen_indices])
+                    decoded_rejected = tokenizer.batch_decode(postprocessed_response[rejected_indices])
+
+                    # WARNING, if pad token == eos token, this will remove the eos from the end
+                    decoded_chosen = [r.split(tokenizer.pad_token)[0] for r in decoded_chosen]
+                    decoded_rejected = [r.split(tokenizer.pad_token)[0] for r in decoded_rejected]
+
+                    saved_data["prompt"].extend(gather_object(decoded_queries))
+                    saved_data["chosen"].extend(gather_object(decoded_chosen))
+                    saved_data["rejected"].extend(gather_object(decoded_rejected))
+
                 torch.cuda.empty_cache()
 
             # Do multiple epochs of PPO training, with a fresh random shuffle in each epoch
@@ -539,11 +589,15 @@ class OnlineDPOTrainer(RLOOTrainer):
             self.state.global_step = update
             self.control = self.callback_handler.on_step_end(args, self.state, self.control)
             if self.control.should_save:
-                print("saving")
                 self._save_checkpoint(model, trial=None, metrics=metrics)
                 self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
+
+        if self.args.save_generations:
+            if accelerator.is_local_main_process:
+                dataset = Dataset.from_dict(saved_data)
+                dataset.save_to_disk(os.path.join(self.args.output_dir, "online_dataset"))
 
     def generate_completions(self, sampling: bool = False):
         args = self.args

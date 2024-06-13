@@ -15,11 +15,11 @@ num_ppo_epochs: 1
 num_mini_batches: 1 
 learning_rate: 3.0e-6
 per_device_train_batch_size: 8
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 16
 model_name_or_path: mnoukhov/pythia410m-sft-tldr 
 sft_model_path: mnoukhov/pythia410m-sft-tldr 
 reward_model_path: mnoukhov/pythia410m-rm-tldr 
-local_rollout_forward_batch_size: 16
+local_rollout_forward_batch_size: 32
 non_eos_penalty: True
 stop_token: eos
 # evaluation_strategy: "steps"
@@ -30,3 +30,4 @@ save_steps: 0.2
 hub_strategy: all_checkpoints
 logging_steps: 100
 num_sample_generations: 5
+save_generations: True

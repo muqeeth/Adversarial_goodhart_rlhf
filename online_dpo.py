@@ -76,6 +76,9 @@ if __name__ == "__main__":
         config.report_to = ""
         config.save_strategy = "no"
         config.num_sample_generations = 0
+        config.total_episodes = 32
+        config.per_device_train_batch_size = 8
+        config.gradient_accumulation_steps = 1
 
     train_dataset = raw_datasets[args.dataset_train_split]
     eval_dataset = raw_datasets[args.dataset_test_split]

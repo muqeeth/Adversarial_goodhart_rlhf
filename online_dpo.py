@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     if args.wandb_run_id == "snow":
         wandb_run_id = os.path.basename(os.getcwd())
-        os.environ["WANDB_RUN_ID"] = wandb_run_id + "_" + config.run_name
+        os.environ["WANDB_RUN_ID"] = wandb_run_id + "_" + config.output_dir
 
     ################
     # Model & Tokenizer

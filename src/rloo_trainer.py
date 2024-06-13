@@ -13,11 +13,13 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import broadcast, gather_object
 from datasets import Dataset
+from src.utils import prepare_deepspeed
 from torch.utils.data import DataLoader
 from transformers import (
     DataCollatorWithPadding,
     GenerationConfig,
     PreTrainedTokenizer,
+    Trainer,
     TrainerCallback,
     TrainerControl,
     TrainerState,
@@ -25,9 +27,10 @@ from transformers import (
 from transformers.integrations import get_reporting_integration_callbacks
 from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
+
 from trl.models.utils import unwrap_model_for_generation
 from trl.trainer.rloo_config import RLOOConfig
-from trl.trainer.rloo_trainer import INVALID_LOGPROB, RLOOTrainer
+from trl.trainer.rloo_trainer import INVALID_LOGPROB
 from trl.trainer.utils import (
     disable_dropout_in_model,
     exact_div,
@@ -39,10 +42,8 @@ from trl.trainer.utils import (
     truncate_response,
 )
 
-from src.utils import prepare_deepspeed
 
-
-class MyRLOOTrainer(RLOOTrainer):
+class MyRLOOTrainer(Trainer):
     def __init__(
         self,
         config: RLOOConfig,
@@ -110,6 +111,9 @@ class MyRLOOTrainer(RLOOTrainer):
         # `per_rank_rollout_batch_size` is our `args.local_batch_size`
         # `per_rank_minibatch_size` is our `args.local_mini_batch_size`
         args.num_updates = args.total_episodes // args.batch_size
+        time_tensor = torch.tensor(int(time.time()), device=accelerator.device)
+        time_int = broadcast(time_tensor, 0).item()  # avoid different timestamps across processes
+        args.run_name = f"{args.exp_name}__{args.seed}__{time_int}"
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
             self.sample_generations_freq = max(1, args.num_updates // args.num_sample_generations)
@@ -196,6 +200,12 @@ class MyRLOOTrainer(RLOOTrainer):
         else:
             self.ref_policy = self.ref_policy.to(self.accelerator.device)
             self.reward_model = self.reward_model.to(self.accelerator.device)
+
+    def get_train_dataloader(self) -> DataLoader:
+        return self.dataloader
+
+    def get_eval_dataloader(self) -> DataLoader:
+        return self.eval_dataloader
 
     def train(self):
         args = self.args
@@ -453,7 +463,6 @@ class MyRLOOTrainer(RLOOTrainer):
             self.state.global_step = update
             self.control = self.callback_handler.on_step_end(args, self.state, self.control)
             if self.control.should_save:
-                print("saving")
                 self._save_checkpoint(model, trial=None, metrics=metrics)
                 self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 

@@ -305,11 +305,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                 self.state.save_steps = args.save_steps
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
-        saved_data = {
-            "prompt": [],
-            "chosen": [],
-            "rejected": [],
-        }
+        saved_data = {"prompt": [], "chosen": [], "rejected": [], "update": []}
 
         for update in range(1, args.num_updates + 1):
             episode += 1 * args.batch_size
@@ -428,6 +424,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                     saved_data["prompt"].extend(gather_object(decoded_queries))
                     saved_data["chosen"].extend(gather_object(decoded_chosen))
                     saved_data["rejected"].extend(gather_object(decoded_rejected))
+                    saved_data["update"].extend(gather_object([update for _ in range(num_examples)]))
 
                 torch.cuda.empty_cache()
 

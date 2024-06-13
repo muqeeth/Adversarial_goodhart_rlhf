@@ -416,8 +416,8 @@ class OnlineDPOTrainer(RLOOTrainer):
 
                 if self.args.save_generations:
                     decoded_queries = tokenizer.batch_decode(queries[:num_examples], skip_special_tokens=True)
-                    decoded_chosen = tokenizer.batch_decode(postprocessed_response[chosen_indices])
-                    decoded_rejected = tokenizer.batch_decode(postprocessed_response[rejected_indices])
+                    decoded_chosen = tokenizer.batch_decode(postprocessed_responses[chosen_indices])
+                    decoded_rejected = tokenizer.batch_decode(postprocessed_responses[rejected_indices])
 
                     # WARNING, if pad token == eos token, this will remove the eos from the end
                     decoded_chosen = [r.split(tokenizer.pad_token)[0] for r in decoded_chosen]

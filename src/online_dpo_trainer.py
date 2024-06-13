@@ -397,6 +397,8 @@ class OnlineDPOTrainer(RLOOTrainer):
                 ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
 
                 kl = logprobs - ref_logprobs
+                non_score_reward = (-args.kl_coef * kl).sum(1)
+                rlhf_reward = scores + non_score_reward
 
                 # num_examples should be same as args.local_batch_size
                 num_examples = scores.size(0) // 2
@@ -539,7 +541,7 @@ class OnlineDPOTrainer(RLOOTrainer):
             with torch.no_grad():
                 mean_kl = kl.sum(1).mean()
                 mean_entropy = (-logprobs).sum(1).mean()
-                # mean_non_score_reward = non_score_reward.mean()
+                mean_non_score_reward = non_score_reward.mean()
                 eps = int(episode / (time.time() - start_time))
                 # policy_chosen_logps = logprobs[chosen_indices]
                 # policy_rejected_logps = logprobs[rejected_indices]
@@ -553,8 +555,8 @@ class OnlineDPOTrainer(RLOOTrainer):
                 metrics["eps"] = eps
                 metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()
                 metrics["objective/entropy"] = self.accelerator.gather(mean_entropy).mean().item()
-                # metrics["objective/non_score_reward"] = self.accelerator.gather(mean_non_score_reward).mean().item()
-                # metrics["objective/rlhf_reward"] = self.accelerator.gather(rlhf_reward).mean().item()
+                metrics["objective/non_score_reward"] = self.accelerator.gather(mean_non_score_reward).mean().item()
+                metrics["objective/rlhf_reward"] = self.accelerator.gather(rlhf_reward).mean().item()
                 metrics["objective/scores"] = self.accelerator.gather(scores.mean()).mean().item()
                 metrics["rewards/chosen"] = chosen_rewards.mean().item()
                 metrics["rewards/rejected"] = rejected_rewards.mean().item()

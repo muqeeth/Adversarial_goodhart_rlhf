@@ -13,7 +13,6 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import broadcast, gather_object
 from datasets import Dataset
-from src.utils import prepare_deepspeed
 from torch.utils.data import DataLoader
 from transformers import (
     DataCollatorWithPadding,
@@ -27,7 +26,6 @@ from transformers import (
 from transformers.integrations import get_reporting_integration_callbacks
 from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
-
 from trl.models.utils import unwrap_model_for_generation
 from trl.trainer.rloo_config import RLOOConfig
 from trl.trainer.rloo_trainer import INVALID_LOGPROB
@@ -41,6 +39,8 @@ from trl.trainer.utils import (
     print_rich_table,
     truncate_response,
 )
+
+from src.utils import prepare_deepspeed
 
 
 class MyRLOOTrainer(Trainer):

@@ -1,9 +1,15 @@
+from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Union
 
 import torch
 import torch.nn as nn
 from transformers import PreTrainedModel
-from trl import DPOTrainer
+from trl import DPOConfig, DPOTrainer
+
+
+@dataclass
+class MyDPOConfig(DPOConfig):
+    shuffle: bool = True
 
 
 class MyDPOTrainer(DPOTrainer):
@@ -21,6 +27,7 @@ class MyDPOTrainer(DPOTrainer):
             policy_rejected_logps,
             policy_chosen_logits,
             policy_rejected_logits,
+            _,
         ) = self.concatenated_forward(model, batch)
 
         # if reference_chosen_logps and reference_rejected_logps in batch use them, otherwise use the reference model
@@ -36,11 +43,13 @@ class MyDPOTrainer(DPOTrainer):
                             reference_rejected_logps,
                             _,
                             _,
+                            _,
                         ) = self.concatenated_forward(self.model, batch)
                 else:
                     (
                         reference_chosen_logps,
                         reference_rejected_logps,
+                        _,
                         _,
                         _,
                     ) = self.concatenated_forward(self.ref_model, batch)
@@ -252,3 +261,9 @@ class MyDPOTrainer(DPOTrainer):
                 )
 
         return batch
+
+    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+        if not self.args.shuffle:
+            return None
+        else:
+            return super()._get_train_sampler()

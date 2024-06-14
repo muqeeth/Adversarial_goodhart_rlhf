@@ -4,16 +4,16 @@ from dataclasses import dataclass, field
 from typing import Literal, Optional
 
 import torch
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from rich.console import Console
 from rich.logging import RichHandler
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.trainer_utils import get_last_checkpoint
-from trl import DPOConfig, DPOTrainer, ModelConfig, get_kbit_device_map, get_peft_config, get_quantization_config
+from trl import ModelConfig, get_kbit_device_map, get_peft_config, get_quantization_config
 from trl.commands.cli_utils import DPOScriptArguments, init_zero_verbose
 
 from callbacks import PerplexityCallback
-from src.dpo_trainer import MyDPOTrainer
+from src.dpo_trainer import MyDPOConfig, MyDPOTrainer
 from src.utils import TRLParser
 
 
@@ -39,10 +39,11 @@ class ScriptArguments(DPOScriptArguments):
     task_type: Literal["tldr", "hh"] = field(default="tldr")
     eval_dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
     wandb_run_id: Optional[str] = field(default=None)
+    local_dataset: bool = False
 
 
 if __name__ == "__main__":
-    parser = TRLParser((ScriptArguments, DPOConfig, ModelConfig))
+    parser = TRLParser((ScriptArguments, MyDPOConfig, ModelConfig))
     args, training_args, model_config = parser.parse_args_and_config()
 
     # Force use our print callback
@@ -82,7 +83,10 @@ if __name__ == "__main__":
     ################
     # Dataset
     ################
-    train_dataset = load_dataset(args.dataset_name, split=args.dataset_train_split)
+    if args.local_dataset:
+        train_dataset = load_from_disk(args.dataset_name)
+    else:
+        train_dataset = load_dataset(args.dataset_name, split=args.dataset_train_split)
     eval_dataset_name = args.eval_dataset_name if args.eval_dataset_name is not None else args.dataset_name
     eval_dataset = load_dataset(eval_dataset_name, split=args.dataset_test_split)
 
@@ -92,6 +96,8 @@ if __name__ == "__main__":
         training_args.push_to_hub = False
         training_args.report_to = ""
         training_args.save_strategy = "no"
+        training_args.per_device_train_batch_size = 4
+        training_args.gradient_accumulation_steps = 1
 
     # if args.task_type == "tldr":
     #     # DPO tokenizer automatically adds a BOS token, which we don't want

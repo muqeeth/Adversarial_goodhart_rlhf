@@ -12,7 +12,6 @@ from transformers import (
 from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
-from src.online_dpo_trainer import OnlineDPOTrainer
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
 from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
 from src.utils import TRLParser

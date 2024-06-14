@@ -20,6 +20,7 @@ from src.utils import TRLParser
 
 @dataclass
 class ScriptArguments:
+    output_global_parent_dir: str = field(default=None)
     dataset_name: str = field(default=None, metadata={"help": "the dataset name"})
     # dataset_text_field: str = field(default=None, metadata={"help": "the text field of the dataset"})
     dataset_train_split: str = field(default="train", metadata={"help": "the name of the training set of the dataset"})
@@ -28,7 +29,6 @@ class ScriptArguments:
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     config: str = field(default=None, metadata={"help": "Path to the optional config file"})
     vllm: bool = field(default=False)
-    online_dpo: bool = field(default=False)
     wandb_run_id: Optional[str] = field(default=None)
 
 
@@ -53,6 +53,10 @@ def prepare_dataset(dataset, tokenizer):
 if __name__ == "__main__":
     parser = TRLParser((ScriptArguments, RLOOConfig, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
+
+    if args.output_global_parent_dir is not None:
+        run_id = os.path.basename(os.getcwd())
+        config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
 
     if args.wandb_run_id == "snow":
         wandb_run_id = os.path.basename(os.getcwd())
@@ -97,8 +101,6 @@ if __name__ == "__main__":
 
     if args.vllm:
         TrainerCls = RLOOTrainerVLLM
-    elif args.online_dpo:
-        TrainerCls = OnlineDPOTrainer
     else:
         TrainerCls = RLOOTrainer
 

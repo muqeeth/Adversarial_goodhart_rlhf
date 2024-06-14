@@ -1,5 +1,6 @@
-task_type: tldr
+output_global_parent_dir: /home/toolkit/trl_summarize/results
 wandb_run_id: snow
+task_type: tldr
 output_dir: rloo_pythia410m_tldr
 run_name: rloo_pythia410m_tldr
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144

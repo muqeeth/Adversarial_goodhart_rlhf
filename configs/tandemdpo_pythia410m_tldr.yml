@@ -34,4 +34,4 @@ save_steps: 0.2
 hub_strategy: all_checkpoints
 logging_steps: 100
 ddp_find_unused_parameters: False
-dataset_num_proc: 2
+dataset_num_proc: 4

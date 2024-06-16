@@ -15,7 +15,7 @@ WANDB_PROJECT := trl
 IMAGE := registry.console.elementai.com/snow.interactive_toolkit/default
 IMAGE_REVISION ?= latest
 
-CPU ?= 2
+CPU ?= 4
 CPU_MEM ?= 64
 GPU ?= 1
 GPU_MEM ?= 32

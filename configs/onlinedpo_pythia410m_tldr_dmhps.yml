@@ -1,4 +1,4 @@
-task_type: tldr
+output_global_parent_dir: /home/toolkit/trl_summarize/results
 wandb_run_id: snow
 output_dir: onlinedpo_pythia410m_tldr_dmhps
 run_name: onlinedpo_pythia410m_tldr
@@ -13,13 +13,13 @@ total_episodes: 128000
 response_length: 53
 num_ppo_epochs: 1
 num_mini_batches: 1 
-learning_rate: 3.0e-6
+learning_rate: 1.0e-6
 per_device_train_batch_size: 8
-gradient_accumulation_steps: 1
+gradient_accumulation_steps: 4
 model_name_or_path: mnoukhov/pythia410m-sft-tldr 
 sft_model_path: mnoukhov/pythia410m-sft-tldr 
 reward_model_path: mnoukhov/pythia410m-rm-tldr 
-local_rollout_forward_batch_size: 8
+local_rollout_forward_batch_size: 32
 non_eos_penalty: True
 stop_token: eos
 # evaluation_strategy: "steps"

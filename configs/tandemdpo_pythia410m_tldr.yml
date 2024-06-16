@@ -1,6 +1,7 @@
 task_type: "tldr"
 output_dir: tandemdpo_pythia410m_tldr
 wandb_run_id: snow
+output_global_parent_dir: /home/toolkit/trl_summarize/results
 # tandem
 local_dataset: True
 dataset_name: /home/toolkit/snapshots/4dfde6c4b24c7176835c27eae1e040e4febaaf4d/onlinedpo_pythia410m_tldr/online_dataset

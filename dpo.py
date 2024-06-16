@@ -40,6 +40,7 @@ class ScriptArguments(DPOScriptArguments):
     eval_dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
     wandb_run_id: Optional[str] = field(default=None)
     local_dataset: bool = False
+    output_global_parent_dir: str = field(default=None)
 
 
 if __name__ == "__main__":
@@ -50,9 +51,14 @@ if __name__ == "__main__":
     training_args.disable_tqdm = True
     console = Console()
 
+    if args.output_global_parent_dir is not None:
+        run_id = os.path.basename(os.getcwd())
+        training_args.output_dir = os.path.join(args.output_global_parent_dir, run_id, training_args.output_dir)
+
     if args.wandb_run_id == "snow":
-        wandb_run_id = os.path.basename(os.getcwd())
-        os.environ["WANDB_RUN_ID"] = wandb_run_id + "_" + training_args.run_name
+        run_id = os.path.basename(os.getcwd())
+        output_dir_basename = os.path.basename(training_args.output_dir)
+        os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
 
     ################
     # Model & Tokenizer

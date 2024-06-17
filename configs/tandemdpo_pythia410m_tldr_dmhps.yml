@@ -1,0 +1,37 @@
+task_type: "tldr"
+output_dir: tandemdpo_pythia410m_tldr
+wandb_run_id: snow
+output_global_parent_dir: /home/toolkit/trl_summarize/results
+# tandem
+local_dataset: True
+dataset_name: /home/toolkit/snapshots/4dfde6c4b24c7176835c27eae1e040e4febaaf4d/onlinedpo_pythia410m_tldr/online_dataset
+shuffle: False
+#
+push_to_hub: False
+model_name_or_path: "mnoukhov/pythia410m-sft-tldr"
+eval_dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia1b
+dataset_test_split: validation
+learning_rate: 1.0e-6
+lr_scheduler_type: cosine
+fp16: True
+gradient_accumulation_steps: 8
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 8
+num_train_epochs: 1
+max_length: 640
+max_prompt_length: 512
+max_target_length: 128
+beta: 0.1
+## peft
+# loss_type: sigmoid
+use_peft: False
+gradient_checkpointing: False
+## save strategy
+evaluation_strategy: "steps"
+eval_steps: 0.2
+save_strategy: steps
+save_steps: 0.2
+hub_strategy: all_checkpoints
+logging_steps: 100
+ddp_find_unused_parameters: False
+dataset_num_proc: 4

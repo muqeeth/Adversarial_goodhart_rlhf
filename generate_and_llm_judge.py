@@ -10,7 +10,7 @@ import torch
 from datasets import builder, load_dataset
 from peft import PeftModelForCausalLM
 from transformers import AutoModelForCausalLM
-from vllm import SamplingParams, SingleGPULLM
+from vllm import LLM, SamplingParams
 from vllm.distributed.parallel_state import destroy_model_parallel
 
 import wandb
@@ -154,13 +154,13 @@ def generate(args):
             del merged
             model_name_or_path = model_save_path
 
-        llm = SingleGPULLM(
+        llm = LLM(
             model=model_name_or_path,
             # revision=script_args.model_revision,
             tokenizer=args.tokenizer_name,
             dtype=args.gen_dtype,
             tensor_parallel_size=1,
-            device="cuda:0",
+            # device="cuda:0",
             # trust_remote_code=True,
         )
 
@@ -230,13 +230,12 @@ def llm_as_a_judge(args, prompts, reference, generations, model_name=None):
     else:
         log_to_wandb = False
 
-    llm = SingleGPULLM(
+    llm = LLM(
         model=args.llm_judge_model_name,
         revision=args.llm_judge_model_revision,
         dtype=args.llm_judge_dtype,
         tensor_parallel_size=1,
         trust_remote_code=True,
-        device="cuda:0",
     )
 
     tokenizer = llm.get_tokenizer()

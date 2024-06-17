@@ -20,7 +20,7 @@ CPU_MEM ?= 64
 GPU ?= 1
 GPU_MEM ?= 32
 # Another option "Tesla T4". You will need `GPU=4` to use that. 
-# GPU_TYPE ?= "A100"
+GPU_TYPE ?= *
 MAX_RUN_TIME ?= 7200
 
 # Accelerate settings
@@ -223,6 +223,7 @@ else
 		--mem $(_CPU_MEM) \
 		--gpu $(_GPU) \
 		--gpu-mem $(GPU_MEM) \
+		--gpu-model-filter $(GPU_TYPE) \
 		--restartable \
 		-- $(_COMMAND) $(_DRY_RUN_SUFFIX)
 endif

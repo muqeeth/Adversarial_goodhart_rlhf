@@ -4,7 +4,7 @@ wandb_run_id: snow
 output_global_parent_dir: /home/toolkit/trl_summarize/results
 # tandem
 local_dataset: True
-dataset_name: /home/toolkit/snapshots/4dfde6c4b24c7176835c27eae1e040e4febaaf4d/onlinedpo_pythia410m_tldr/online_dataset
+dataset_name: /home/toolkit/trl_summarize/results/177f9081e8660e0cee4278c72352af20a051b946/onlinedpo_pythia410m_tldr_dmhps/online_dataset
 shuffle: False
 #
 push_to_hub: False

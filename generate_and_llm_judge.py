@@ -62,10 +62,7 @@ class LLMJudgeArguments:
     llm_judge_max_new_tokens: Optional[int] = field(default=None, metadata={"help": "max new tokens"})
     template: Literal["tldr", "hh"] = field(default="tldr", metadata={"help": "the template, e.g. summarization"})
     seed: Optional[int] = field(default=0)
-    output_dir: Optional[str] = field(
-        default="/home/toolkit/trl_results",
-        metadata={"help": "output folder"},
-    )
+    output_dir: Optional[str] = None
 
 
 OPTIONS = ["A", "B"]

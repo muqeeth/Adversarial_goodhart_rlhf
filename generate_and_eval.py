@@ -150,7 +150,7 @@ def generate(script_args):
         print("saving dataset to")
         print(dataset_path)
         dataset.save_to_disk(dataset_path)
-        with open(f"{dataset_path}_sampling_params.txt", "w") as f:
+        with open(os.path.join(dataset_path, "sampling_params.txt"), "w") as f:
             print(sampling_params, file=f)
 
     print(f"generated {len(gens)} steps")

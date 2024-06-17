@@ -9,11 +9,12 @@ import pandas as pd
 import torch
 from datasets import builder, load_dataset
 from peft import PeftModelForCausalLM
-from transformers import AutoModelForCausalLM, HfArgumentParser
+from transformers import AutoModelForCausalLM
 from vllm import LLM, SamplingParams
 from vllm.distributed.parallel_state import destroy_model_parallel
 
 import wandb
+from src.utils import TRLParser
 
 
 builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
@@ -25,6 +26,8 @@ class GenerateScriptArguments:
         default="/home/toolkit/trl_results",
         metadata={"help": "output folder"},
     )
+    save_generations: bool = True
+    save_path: Optional[str] = None
     num_gpus: Optional[int] = field(default=1)
     base_model_name: Optional[str] = field(default=None, metadata={"help": "the model name"})
     base_model_revision: Optional[str] = field(default=None)
@@ -55,7 +58,7 @@ class GenerateScriptArguments:
 
 @dataclass
 class LLMJudgeArguments:
-    wandb_log_id: Optional[str] = field(default=None)
+    wandb_run_id: Optional[str] = field(default=None)
     llm_judge_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
     llm_judge_model_revision: Optional[str] = field(default=None)
     llm_judge_dtype: Optional[str] = field(default="auto")
@@ -183,10 +186,8 @@ def generate(script_args):
         torch.cuda.empty_cache()
         torch.distributed.destroy_process_group()
 
-    dataset_path = os.path.join(script_args.model_name_or_path, "_generations")
-    os.makedirs(dataset_path, exist_ok=True)
-    dataset.save_to_disk(os.path.join(dataset_path, "dataset"))
-    with open(os.path.join(dataset_path, "sampling_params.txt"), "w") as f:
+    dataset.save_to_disk(script_args.save_path)
+    with open(os.path.join(script_args.save_path, "sampling_params.txt"), "w") as f:
         print(sampling_params, file=f)
 
     print(f"generated {len(gens)} steps")
@@ -226,22 +227,12 @@ def create_llm_judge_prompts(tokenizer, prompts, reference, generated, seed, pro
 
 
 def llm_as_a_judge(args, prompts, reference, generations, model_name=None):
-    if args.wandb_log_id is not None:
-        # don't overwrite the wandb name of the original run
-        if args.wandb_log_id == "model_name":
-            # model name = config_wandblogid
-            wandb_log_id = model_name.split("_")[-1]
-        elif args.wandb_log_id == "model_path":
-            # model path = /home/.../wandb_log_id/output
-            wandb_log_id = model_name.split("/")[-2]
-        else:
-            wandb_log_id = args.wandb_log_id
-
+    if args.wandb_run_id is not None:
+        # don't overwrite name
         os.environ.pop("WANDB_NAME")
-        # original_name = wandb_name.removeprefix("geneval_")
-        wandb.init(id=wandb_log_id, resume="allow")
+        wandb.init(id=args.wandb_run_id, resume="allow")
         log_to_wandb = True
-        print(f"Logging to WandB {wandb_log_id}")
+        print(f"Logging to WandB {args.wandb_run_id}")
     else:
         log_to_wandb = False
 
@@ -359,8 +350,23 @@ def main(generate_args, eval_args):
     eval_args.output_dir = generate_args.output_dir
 
     if generate_args.sanity_check:
-        eval_args.wandb_log_id = None
+        eval_args.wandb_run_id = None
+        # generate_args.save_generations = False
 
+    if eval_args.wandb_run_id == "snow":
+        output_paths = os.path.split(generate_args.model_name_or_path)
+        config_name = output_paths[-1]
+        run_id = output_paths[-2]
+        eval_args.wandb_run_id = run_id + "_" + config_name
+
+    if generate_args.save_generations and generate_args.save_path is None:
+        dataset_path = os.path.join(generate_args.model_name_or_path, "_generations")
+        os.makedirs(dataset_path, exist_ok=True)
+        generate_args.save_path = dataset_path
+
+    import pdb
+
+    pdb.set_trace()
     print("GENERATING")
     prompts, reference, generations = generate(generate_args)
     # dataset = load_dataset(generate_args.dataset_name, split=generate_args.split)
@@ -372,13 +378,7 @@ def main(generate_args, eval_args):
     llm_as_a_judge(eval_args, prompts, reference, generations, generate_args.model_name_or_path)
 
 
-def main_args_dict(args_dict):
-    parser = HfArgumentParser([GenerateScriptArguments, LLMJudgeArguments])
-    generate_args, eval_args = parser.parse_dict(args_dict)
-    main(generate_args, eval_args)
-
-
 if __name__ == "__main__":
-    parser = HfArgumentParser([GenerateScriptArguments, LLMJudgeArguments])
-    generate_args, eval_args = parser.parse_args_into_dataclasses()
+    parser = TRLParser([GenerateScriptArguments, LLMJudgeArguments])
+    generate_args, eval_args = parser.parse_args_and_config()
     main(generate_args, eval_args)

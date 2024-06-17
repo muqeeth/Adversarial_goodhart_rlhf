@@ -177,9 +177,10 @@ def generate(args):
         torch.cuda.empty_cache()
         # torch.distributed.destroy_process_group()
 
-    dataset.save_to_disk(args.save_path)
-    with open(os.path.join(args.save_path, "sampling_params.txt"), "w") as f:
-        print(sampling_params, file=f)
+    if args.save_path:
+        dataset.save_to_disk(args.save_path)
+        with open(os.path.join(args.save_path, "sampling_params.txt"), "w") as f:
+            print(sampling_params, file=f)
 
     print(f"generated {len(gens)} steps")
     reference = []
@@ -220,7 +221,6 @@ def create_llm_judge_prompts(tokenizer, prompts, reference, generated, seed, pro
 def llm_as_a_judge(args, prompts, reference, generations, model_name=None):
     if args.wandb_run_id is not None:
         # don't overwrite name
-        os.environ.pop("WANDB_NAME")
         wandb.init(id=args.wandb_run_id, resume="allow")
         log_to_wandb = True
         print(f"Logging to WandB {args.wandb_run_id}")
@@ -311,28 +311,30 @@ def llm_as_a_judge(args, prompts, reference, generations, model_name=None):
             print(f"Warning step name {step_str} is not an integer")
             step = step + 1
 
+        df = pd.DataFrame(
+            {
+                "prompt": prompts,
+                "reference": reference,
+                "generated": generated,
+                "winner": winner,
+                "llm_prompt": llm_judge_prompts,
+                "full_conov": full_convo,
+                "generated_idx": generated_indices,
+            }
+        )
+
         if log_to_wandb:
             wandb.log(
                 {
                     "llm_judge/win_rate": win_rate,
                     "train/global_step": step,
+                    "llm_judge/completions": wandb.Table(dataframe=df.head(10)),
                 }
             )
 
         print(f"step {step}: win-rate {win_rate}")
 
         if args.output_dir is not None:
-            df = pd.DataFrame(
-                {
-                    "prompt": prompts,
-                    "reference": reference,
-                    "generated": generated,
-                    "winner": winner,
-                    "llm_prompt": llm_judge_prompts,
-                    "full_conov": full_convo,
-                    "generated_idx": generated_indices,
-                }
-            )
             df.to_csv(os.path.join(args.output_dir, f"step{step}.csv"))
 
 
@@ -347,12 +349,14 @@ if __name__ == "__main__":
         ]
         generate_args.model_paths = [checkpoint_subfolders[0]]
         generate_args.split = generate_args.split + "[:100]"
-        # generate_args.save_generations = False
+        generate_args.save_generations = False
 
     if eval_args.wandb_run_id == "snow":
-        output_paths = os.path.split(generate_args.model_name_or_path)
-        config_name = output_paths[-1]
-        run_id = output_paths[-2]
+        # remove extra / at end
+        normpath = os.path.normpath(generate_args.model_name_or_path)
+        path_parts = normpath.split("/")
+        config_name = path_parts[-1]
+        run_id = path_parts[-2]
         eval_args.wandb_run_id = run_id + "_" + config_name
 
     if generate_args.save_generations and generate_args.save_path is None:

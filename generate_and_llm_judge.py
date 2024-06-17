@@ -10,7 +10,7 @@ import torch
 from datasets import builder, load_dataset
 from peft import PeftModelForCausalLM
 from transformers import AutoModelForCausalLM
-from vllm import LLM, SamplingParams
+from vllm import SamplingParams, SingleGPULLM
 from vllm.distributed.parallel_state import destroy_model_parallel
 
 import wandb
@@ -22,13 +22,8 @@ builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 @dataclass
 class GenerateScriptArguments:
-    output_dir: Optional[str] = field(
-        default="/home/toolkit/trl_results",
-        metadata={"help": "output folder"},
-    )
     save_generations: bool = True
     save_path: Optional[str] = None
-    num_gpus: Optional[int] = field(default=1)
     base_model_name: Optional[str] = field(default=None, metadata={"help": "the model name"})
     base_model_revision: Optional[str] = field(default=None)
     model_name_or_path: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
@@ -40,10 +35,10 @@ class GenerateScriptArguments:
         default="arianhosseini/openai_summarize_unlabelled", metadata={"help": "the dataset name"}
     )
     dataset_prompt_field: str = field(
-        default="prompt", metadata={"help": "name of the prompt field in the dataset, e.g. 'query' in summarization"}
+        default="query", metadata={"help": "name of the prompt field in the dataset, e.g. 'query' in summarization"}
     )
-    dataset_chosen_field: str = field(
-        default="chosen",
+    dataset_reference_field: str = field(
+        default="reference_response",
         metadata={"help": "name of the chosen field in the dataset, e.g. 'reference_response' in summarization"},
     )
     split: Optional[str] = field(default="validation", metadata={"help": "the dataset name"})
@@ -67,6 +62,10 @@ class LLMJudgeArguments:
     llm_judge_max_new_tokens: Optional[int] = field(default=None, metadata={"help": "max new tokens"})
     template: Literal["tldr", "hh"] = field(default="tldr", metadata={"help": "the template, e.g. summarization"})
     seed: Optional[int] = field(default=0)
+    output_dir: Optional[str] = field(
+        default="/home/toolkit/trl_results",
+        metadata={"help": "output folder"},
+    )
 
 
 OPTIONS = ["A", "B"]
@@ -110,48 +109,42 @@ More helpful: <"A" or "B">"""
 HH_TEMPLATE = Template(judge_prompt=hh_prompt, comparison_key="Comparison:", output_key="More helpful:")
 
 
-def generate(script_args):
-    dataset = load_dataset(script_args.dataset_name, split=script_args.split)
-    if script_args.sanity_check:
-        dataset = dataset.select(range(100))
+def generate(args):
+    dataset = load_dataset(args.dataset_name, split=args.split)
 
-    prompts = dataset[script_args.dataset_prompt_field]
+    prompts = dataset[args.dataset_prompt_field]
 
     sampling_params = SamplingParams(
-        temperature=script_args.temperature,
-        max_tokens=script_args.max_new_tokens,
-        top_p=script_args.top_p,
+        temperature=args.temperature,
+        max_tokens=args.max_new_tokens,
+        top_p=args.top_p,
         n=1,
     )
 
     gens = {}
 
-    model_paths = [script_args.model_name_or_path]
+    model_paths = [args.model_name_or_path]
     # path with possible checkpoint subfolders
-    if os.path.exists(script_args.model_name_or_path):
+    if os.path.exists(args.model_name_or_path):
         checkpoint_subfolders = [
             path
-            for path in os.listdir(script_args.model_name_or_path)
-            if path.startswith("checkpoint") and (not script_args.model_paths or path in script_args.model_paths)
+            for path in os.listdir(args.model_name_or_path)
+            if path.startswith("checkpoint") and (not args.model_paths or path in args.model_paths)
         ]
 
         # if there are checkpoint subfolders, use those instead of model_path
         if checkpoint_subfolders:
-            model_paths = [
-                os.path.join(script_args.model_name_or_path, subfolder) for subfolder in checkpoint_subfolders
-            ]
+            model_paths = [os.path.join(args.model_name_or_path, subfolder) for subfolder in checkpoint_subfolders]
 
     for model_name_or_path in model_paths:
         model_or_checkpoint_name = os.path.basename(model_name_or_path)
 
         print(f"generating {model_name_or_path}")
 
-        if script_args.base_model_name is not None:
-            assert script_args.model_revision is None
+        if args.base_model_name is not None:
+            assert args.model_revision is None
             # peft model that needs to be merged
-            base_model = AutoModelForCausalLM.from_pretrained(
-                script_args.base_model_name, revision=script_args.base_model_revision
-            )
+            base_model = AutoModelForCausalLM.from_pretrained(args.base_model_name, revision=args.base_model_revision)
             # merge the model and save
             model = PeftModelForCausalLM.from_pretrained(base_model, model_name_or_path, device_map="cpu")
             merged = model.merge_and_unload()
@@ -161,13 +154,14 @@ def generate(script_args):
             del merged
             model_name_or_path = model_save_path
 
-        llm = LLM(
+        llm = SingleGPULLM(
             model=model_name_or_path,
-            revision=script_args.model_revision,
-            tokenizer=script_args.tokenizer_name,
-            dtype=script_args.gen_dtype,
-            tensor_parallel_size=script_args.num_gpus,
-            trust_remote_code=True,
+            # revision=script_args.model_revision,
+            tokenizer=args.tokenizer_name,
+            dtype=args.gen_dtype,
+            tensor_parallel_size=1,
+            device="cuda:0",
+            # trust_remote_code=True,
         )
 
         generations = llm.generate(prompts, sampling_params)
@@ -184,15 +178,15 @@ def generate(script_args):
         del llm
         gc.collect()
         torch.cuda.empty_cache()
-        torch.distributed.destroy_process_group()
+        # torch.distributed.destroy_process_group()
 
-    dataset.save_to_disk(script_args.save_path)
-    with open(os.path.join(script_args.save_path, "sampling_params.txt"), "w") as f:
+    dataset.save_to_disk(args.save_path)
+    with open(os.path.join(args.save_path, "sampling_params.txt"), "w") as f:
         print(sampling_params, file=f)
 
     print(f"generated {len(gens)} steps")
     reference = []
-    for ref_response in dataset[script_args.dataset_chosen_field]:
+    for ref_response in dataset[args.dataset_reference_field]:
         if ref_response.endswith("<|endoftext|>"):
             ref_response = ref_response.split("<|endoftext|>")[0]
 
@@ -236,12 +230,13 @@ def llm_as_a_judge(args, prompts, reference, generations, model_name=None):
     else:
         log_to_wandb = False
 
-    llm = LLM(
+    llm = SingleGPULLM(
         model=args.llm_judge_model_name,
         revision=args.llm_judge_model_revision,
         dtype=args.llm_judge_dtype,
-        tensor_parallel_size=args.num_gpus,
+        tensor_parallel_size=1,
         trust_remote_code=True,
+        device="cuda:0",
     )
 
     tokenizer = llm.get_tokenizer()
@@ -345,12 +340,17 @@ def llm_as_a_judge(args, prompts, reference, generations, model_name=None):
             df.to_csv(os.path.join(args.output_dir, f"step{step}.csv"))
 
 
-def main(generate_args, eval_args):
-    eval_args.num_gpus = generate_args.num_gpus
-    eval_args.output_dir = generate_args.output_dir
+if __name__ == "__main__":
+    parser = TRLParser([GenerateScriptArguments, LLMJudgeArguments])
+    generate_args, eval_args = parser.parse_args_and_config()
 
     if generate_args.sanity_check:
         eval_args.wandb_run_id = None
+        checkpoint_subfolders = [
+            path for path in os.listdir(generate_args.model_name_or_path) if path.startswith("checkpoint")
+        ]
+        generate_args.model_paths = [checkpoint_subfolders[0]]
+        generate_args.split = generate_args.split + "[:100]"
         # generate_args.save_generations = False
 
     if eval_args.wandb_run_id == "snow":
@@ -364,21 +364,8 @@ def main(generate_args, eval_args):
         os.makedirs(dataset_path, exist_ok=True)
         generate_args.save_path = dataset_path
 
-    import pdb
-
-    pdb.set_trace()
     print("GENERATING")
     prompts, reference, generations = generate(generate_args)
-    # dataset = load_dataset(generate_args.dataset_name, split=generate_args.split)
-    # generations = {"step0": dataset["query_reference_response"]}
-    # prompts = dataset["query"]
-    # reference = dataset["reference_response"]
-    # generations = {"step0": dataset["reference_response"]}
+
     print("EVALUATING")
     llm_as_a_judge(eval_args, prompts, reference, generations, generate_args.model_name_or_path)
-
-
-if __name__ == "__main__":
-    parser = TRLParser([GenerateScriptArguments, LLMJudgeArguments])
-    generate_args, eval_args = parser.parse_args_and_config()
-    main(generate_args, eval_args)

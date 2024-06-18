@@ -1,0 +1,14 @@
+run_name: sft_pythia410m_tldr
+output_model_name: pythia410m_tldr_sft
+output_dir: results
+model_name_or_path: EleutherAI/pythia-410m-deduped
+dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
+dataset_train_name: train
+dataset_test_name: validation
+learning_rate: 1e-5
+lr_scheduler_type: cosine
+bf16: True
+per_device_train_batch_size: 16
+per_device_eval_batch_size: 8
+num_train_epochs: 1
+max_seq_length: None

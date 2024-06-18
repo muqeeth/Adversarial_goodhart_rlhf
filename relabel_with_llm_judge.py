@@ -100,7 +100,6 @@ def create_llm_judge_prompts(tokenizer, prompts, reference, generated, seed, pro
 def llm_as_a_judge(args, prompts, first, second):
     llm = LLM(
         model=args.model_name,
-        revision=args.llm_judge_model_revision,
         dtype=args.llm_judge_dtype,
         tensor_parallel_size=1,
         trust_remote_code=True,

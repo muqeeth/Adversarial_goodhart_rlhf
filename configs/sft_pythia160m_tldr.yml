@@ -1,9 +1,10 @@
 # output and name
 run_name: sft_pythia160m_tldr
 output_dir: sft_pythia160m_tldr
-output_model_name: pythia160m_tldr_sft
+hub_model_id: pythia160m-sft-tldr
 output_global_parent_dir: /home/toolkit/trl_summarize/results
 wandb_run_id: snow
+push_to_hub: True
 # tldr stuff
 task_type: tldr
 model_name_or_path: EleutherAI/pythia-160m-deduped

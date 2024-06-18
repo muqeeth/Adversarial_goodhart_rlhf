@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
     trainer.save_model(config.output_dir)
 
-    if PartialState().is_main_process and model_config.use_peft:
-        model = trainer.model.merge_and_unload()
-        model.push_to_hub(args.output_model_name)
-        tokenizer.push_to_hub(args.output_model_name)
+    if config.push_to_hub:
+        if PartialState().is_main_process and model_config.use_peft:
+            model = trainer.model.merge_and_unload()
+            model.push_to_hub(config.hub_model_id)

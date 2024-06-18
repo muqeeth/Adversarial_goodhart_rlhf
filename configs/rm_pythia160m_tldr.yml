@@ -1,6 +1,11 @@
+# output and name
+run_name: rm_pythia160m_tldr
 output_dir: rm_pythia160m_tldr
 hub_model_id: mnoukhov/pythia160m-rm-tldr
+output_global_parent_dir: /home/toolkit/trl_summarize/results
+wandb_run_id: snow
 push_to_hub: True
+# rm
 model_name_or_path: mnoukhov/pythia160m-sft-tldr
 dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia1b
 dataset_eval_split: validation
@@ -14,10 +19,6 @@ num_train_epochs: 1
 max_length: 640
 ## peft
 use_peft: False
-# lora_r: 16
-# lora_alpha: 32
-# lora_dropout: 0.
-# lora_task_type: SEQ_CLS
 gradient_checkpointing: False
 ## save strategy
 evaluation_strategy: "steps"

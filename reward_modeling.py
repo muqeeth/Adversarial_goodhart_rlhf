@@ -1,3 +1,4 @@
+import os
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional
@@ -22,6 +23,7 @@ class RewardScriptArguments:
     dataset_eval_split: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
     tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
     sanity_check: bool = field(default=False, metadata={"help": "only train on 1000 samples"})
+    output_global_parent_dir: str = field(default=None)
 
 
 def get_peft_config(model_config: ModelConfig):
@@ -68,6 +70,15 @@ def tldr_preprocess_function(examples, max_length):
 if __name__ == "__main__":
     parser = TRLParser((RewardScriptArguments, RewardConfig, ModelConfig))
     script_args, reward_config, model_config = parser.parse_args_and_config()
+
+    if script_args.output_global_parent_dir is not None:
+        run_id = os.path.basename(os.getcwd())
+        reward_config.output_dir = os.path.join(script_args.output_global_parent_dir, run_id, reward_config.output_dir)
+
+    if script_args.wandb_run_id == "snow":
+        run_id = os.path.basename(os.getcwd())
+        output_dir_basename = os.path.basename(reward_config.output_dir)
+        os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
 
     ################
     # Model & Tokenizer

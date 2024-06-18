@@ -17,9 +17,9 @@ class LLMJudgeArguments:
     dataset_name: str = None
     train_split: str = "train"
     eval_split: Optional[str] = "validation"
-    num_completions: int = 1
-    llm_judge_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
-    llm_judge_model_revision: Optional[str] = field(default=None)
+    # TODO?
+    # judge_both_swaps: bool = False
+    model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
     llm_judge_dtype: Optional[str] = field(default="auto")
     llm_judge_temperature: Optional[float] = field(default=0.7, metadata={"help": "Gen temperature"})
     llm_judge_top_p: Optional[float] = field(default=0.9, metadata={"help": "Gen temperature"})
@@ -99,7 +99,7 @@ def create_llm_judge_prompts(tokenizer, prompts, reference, generated, seed, pro
 
 def llm_as_a_judge(args, prompts, first, second):
     llm = LLM(
-        model=args.llm_judge_model_name,
+        model=args.model_name,
         revision=args.llm_judge_model_revision,
         dtype=args.llm_judge_dtype,
         tensor_parallel_size=1,
@@ -112,7 +112,7 @@ def llm_as_a_judge(args, prompts, first, second):
         temperature=args.llm_judge_temperature,
         max_tokens=args.llm_judge_max_new_tokens,
         top_p=args.llm_judge_top_p,
-        n=args.num_completions,
+        n=1,
         stop_token_ids=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")],
     )
 
@@ -132,7 +132,6 @@ def llm_as_a_judge(args, prompts, first, second):
         llm_judge_template.judge_prompt,
     )
     llm_judge_output = llm.generate(llm_judge_prompts, sampling_params)
-    assert args.num_completions == 1
     llm_judge_texts = [output.outputs[0].text for output in llm_judge_output]
 
     comparisons, preferred = [], []

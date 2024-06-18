@@ -1,4 +1,4 @@
 dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144
-llm_judge_model_name: meta-llama/Meta-Llama-3-8B-Instruct
+model_name: meta-llama/Meta-Llama-3-8B-Instruct
 output_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_llama8b
 push_to_hub: True

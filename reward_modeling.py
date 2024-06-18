@@ -108,6 +108,7 @@ if __name__ == "__main__":
 
         reward_config.report_to = ""
         reward_config.push_to_hub = False
+        reward_config.save_strategy = "no"
 
     # Preprocess the dataset and filter out examples that are longer than args.max_length
     raw_datasets = raw_datasets.map(

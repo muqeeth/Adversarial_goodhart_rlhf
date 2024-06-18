@@ -14,7 +14,7 @@ from transformers import (
     AutoTokenizer,
     pipeline,
 )
-from vllm import SamplingParams, SingleGPULLM
+from vllm import LLM, SamplingParams
 from vllm.distributed.parallel_state import destroy_model_parallel
 
 import wandb
@@ -51,7 +51,7 @@ class GenerateScriptArguments:
 
 @dataclass
 class EvalScriptArguments:
-    wandb_log_id: Optional[str] = field(default=None)
+    wandb_run_id: Optional[str] = field(default=None)
     gold_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
     gold_model_revision: Optional[str] = field(default=None)
     eval_dtype: Optional[str] = field(default="auto")
@@ -62,9 +62,6 @@ class EvalScriptArguments:
 
 def generate(script_args):
     dataset = load_dataset(script_args.dataset_name, split=script_args.split)
-    if script_args.sanity_check:
-        dataset = dataset.select(range(100))
-
     prompts = dataset["query"]
 
     sampling_params = SamplingParams(
@@ -111,13 +108,13 @@ def generate(script_args):
             model_name_or_path = model_save_path
 
         assert script_args.num_gpus == 1
-        llm = SingleGPULLM(
+        llm = LLM(
             model=model_name_or_path,
             tokenizer=script_args.tokenizer_name,
             dtype=script_args.gen_dtype,
             trust_remote_code=True,
-            tensor_parallel_size=1,
-            device="cuda:0",
+            # tensor_parallel_size=1,
+            # device="cuda:0",
         )
 
         generations = llm.generate(prompts, sampling_params)
@@ -241,6 +238,14 @@ if __name__ == "__main__":
     parser = TRLParser([GenerateScriptArguments, EvalScriptArguments])
     generate_args, eval_args = parser.parse_args_and_config()
 
+    if generate_args.sanity_check:
+        eval_args.wandb_run_id = None
+        checkpoint_subfolders = [
+            path for path in os.listdir(generate_args.model_name_or_path) if path.startswith("checkpoint")
+        ]
+        generate_args.model_paths = [checkpoint_subfolders[-1]]
+        generate_args.split = generate_args.split + "[:100]"
+
     print("GENERATING")
     prompts, reference, generations = generate(generate_args)
     #
@@ -248,20 +253,18 @@ if __name__ == "__main__":
     # dataset = dataset.select(range(100))
     # generations = {"step0": dataset["query_reference_response"]}
     # reference = dataset["query_reference_response"]
-    if generate_args.sanity_check:
-        eval_args.wandb_log_id = None
-    elif eval_args.wandb_log_id == "snapshot_model_name":
-        # model path = /home/.../snapshot/model-name
-        # wandb_log_id = snapshot_model-name
-        path = generate_args.model_name_or_path.strip("/")
-        snapshot_id = path.split("/")[-2]
-        model_name = path.split("/")[-1]
-        eval_args.wandb_log_id = snapshot_id + "_" + model_name
+    if eval_args.wandb_run_id == "snow":
+        # remove extra / at end
+        normpath = os.path.normpath(generate_args.model_name_or_path)
+        path_parts = normpath.split("/")
+        config_name = path_parts[-1]
+        run_id = path_parts[-2]
+        eval_args.wandb_run_id = run_id + "_" + config_name
 
-    log_to_wandb = eval_args.wandb_log_id is not None
+    log_to_wandb = eval_args.wandb_run_id is not None
     if log_to_wandb:
-        wandb.init(id=eval_args.wandb_log_id, resume="allow")
-        print(f"Logging to WandB {eval_args.wandb_log_id}")
+        wandb.init(id=eval_args.wandb_run_id, resume="allow")
+        print(f"Logging to WandB {eval_args.wandb_run_id}")
 
     print("EVALUATING")
     evaluate(eval_args, prompts, reference, generations, log_to_wandb)

@@ -1,5 +1,5 @@
 # model_name_or_path: /home/toolkit/snapshots/fa0277d307db882ff9735fe0edc03cfb24a59442/dpo_pythia410m_tldr
-wandb_log_id: snapshot_model_name
+wandb_run_id: snow
 # wandb_log_id: eknajuax
 # model_paths: [checkpoint-291]
 save_generations: True

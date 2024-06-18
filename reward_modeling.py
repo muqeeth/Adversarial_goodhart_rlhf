@@ -22,6 +22,7 @@ class RewardScriptArguments:
     dataset_train_split: str = field(default="train", metadata={"help": "the name of the training set of the dataset"})
     dataset_eval_split: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
     tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
+    wandb_run_id: Optional[str] = field(default=None)
     sanity_check: bool = field(default=False, metadata={"help": "only train on 1000 samples"})
     output_global_parent_dir: str = field(default=None)
 

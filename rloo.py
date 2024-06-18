@@ -13,7 +13,8 @@ from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
-from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
+
+# from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
 from src.utils import TRLParser
 
 
@@ -98,12 +99,12 @@ if __name__ == "__main__":
     # Training
     ################
 
-    if args.vllm:
-        TrainerCls = RLOOTrainerVLLM
-    else:
-        TrainerCls = RLOOTrainer
+    # if args.vllm:
+    #     TrainerCls = RLOOTrainerVLLM
+    # else:
+    #     TrainerCls = RLOOTrainer
 
-    trainer = TrainerCls(
+    trainer = RLOOTrainer(
         config=config,
         tokenizer=tokenizer,
         policy=policy,

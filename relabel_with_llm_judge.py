@@ -97,14 +97,7 @@ def create_llm_judge_prompts(tokenizer, prompts, reference, generated, seed, pro
     return llm_judge_prompts, generated_indices
 
 
-def llm_as_a_judge(args, prompts, first, second):
-    llm = LLM(
-        model=args.model_name,
-        dtype=args.llm_judge_dtype,
-        tensor_parallel_size=1,
-        trust_remote_code=True,
-    )
-
+def llm_as_a_judge(args, llm, prompts, first, second):
     tokenizer = llm.get_tokenizer()
 
     sampling_params = SamplingParams(
@@ -204,8 +197,15 @@ if __name__ == "__main__":
     args = parser.parse_args_and_config()[0]
     if args.sanity_check:
         args.train_split = args.train_split + "[:100]"
-        args.eval_split = None
+        args.eval_split = args.eval_split + "[:100]"
         args.push_to_hub = False
+
+    llm = LLM(
+        model=args.model_name,
+        dtype=args.llm_judge_dtype,
+        tensor_parallel_size=1,
+        trust_remote_code=True,
+    )
 
     relabel_dataset = DatasetDict()
     for split in [args.train_split, args.eval_split]:
@@ -217,7 +217,7 @@ if __name__ == "__main__":
         chosen = dataset["chosen"]
         rejected = dataset["rejected"]
 
-        winners, win_rate = llm_as_a_judge(args, prompts, chosen, rejected)
+        winners, win_rate = llm_as_a_judge(args, llm, prompts, chosen, rejected)
 
         print(f"Agreement rate {win_rate}")
 

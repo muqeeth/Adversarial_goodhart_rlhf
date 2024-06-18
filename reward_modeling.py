@@ -6,8 +6,8 @@ import torch
 from datasets import load_dataset
 from peft import LoraConfig
 from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments
-from trl import ModelConfig, RewardTrainer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from trl import ModelConfig, RewardConfig, RewardTrainer
 
 from src.utils import TRLParser
 
@@ -22,7 +22,6 @@ class RewardScriptArguments:
     dataset_eval_split: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
     tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
     sanity_check: bool = field(default=False, metadata={"help": "only train on 1000 samples"})
-    max_length: Optional[int] = None
 
 
 def get_peft_config(model_config: ModelConfig):
@@ -55,6 +54,9 @@ def tldr_preprocess_function(examples, max_length):
         tokenized_chosen = tokenizer(query + chosen, max_length=max_length, truncation=True)
         tokenized_rejected = tokenizer(query + rejected, max_length=max_length, truncation=True)
 
+        assert tokenized_chosen["input_ids"][-1] == tokenizer.eos_token_id
+        assert tokenized_rejected["input_ids"][-1] == tokenizer.eos_token_id
+
         new_examples["input_ids_chosen"].append(tokenized_chosen["input_ids"])
         new_examples["attention_mask_chosen"].append(tokenized_chosen["attention_mask"])
         new_examples["input_ids_rejected"].append(tokenized_rejected["input_ids"])
@@ -64,9 +66,8 @@ def tldr_preprocess_function(examples, max_length):
 
 
 if __name__ == "__main__":
-    parser = TRLParser((RewardScriptArguments, TrainingArguments, ModelConfig))
+    parser = TRLParser((RewardScriptArguments, RewardConfig, ModelConfig))
     script_args, reward_config, model_config = parser.parse_args_and_config()
-    # reward_config.gradient_checkpointing_kwargs = dict(use_reentrant=False)
 
     ################
     # Model & Tokenizer
@@ -94,8 +95,6 @@ if __name__ == "__main__":
             " Make sure to pass --lora_task_type SEQ_CLS when using this script."
         )
 
-    if not tokenizer.pad_token:
-        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
     model.config.pad_token_id = tokenizer.pad_token_id
 
     ################
@@ -114,7 +113,7 @@ if __name__ == "__main__":
     raw_datasets = raw_datasets.map(
         tldr_preprocess_function,
         batched=True,
-        fn_kwargs={"max_length": script_args.max_length},
+        fn_kwargs={"max_length": reward_config.max_length},
     )
     train_dataset = raw_datasets[script_args.dataset_train_split]
     eval_dataset = raw_datasets[script_args.dataset_eval_split]
@@ -129,7 +128,6 @@ if __name__ == "__main__":
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         peft_config=get_peft_config(model_config),
-        max_length=script_args.max_length,
     )
     trainer.train()
     trainer.save_model(reward_config.output_dir)

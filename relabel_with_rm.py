@@ -4,7 +4,7 @@ from typing import Dict, List, Literal, Optional
 import torch
 from datasets import DatasetDict, builder, load_dataset
 from tqdm.auto import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
+from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
 from trl import ModelConfig
 from trl.trainer.utils import get_kbit_device_map, get_quantization_config
@@ -87,37 +87,33 @@ if __name__ == "__main__":
         args.eval_split = args.eval_split + "[:100]"
         args.push_to_hub = False
 
-    tokenizer_name = args.tokenizer_name if args.tokenizer_name is not None else model_config.model_name_or_path
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-    if not tokenizer.pad_token:
-        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-
     torch_dtype = (
         model_config.torch_dtype
         if model_config.torch_dtype in ["auto", None]
         else getattr(torch, model_config.torch_dtype)
     )
     quantization_config = get_quantization_config(model_config)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_config.model_name_or_path,
-        revision=model_config.model_revision,
-        trust_remote_code=model_config.trust_remote_code,
+
+    model_kwargs = dict(
         attn_implementation=model_config.attn_implementation,
         torch_dtype=torch_dtype,
-        device_map=get_kbit_device_map() if quantization_config is not None else None,
+        device_map=get_kbit_device_map() if quantization_config is not None else "auto",
         quantization_config=quantization_config,
     )
 
-    model.config.pad_token_id = tokenizer.pad_token_id
+    tokenizer_name = args.tokenizer_name if args.tokenizer_name is not None else model_config.model_name_or_path
 
     reward_pipeline = pipeline(
         task="text-classification",
-        model=model,
-        tokenizer=tokenizer,
-        device=0,
-        # device_map="auto",
+        model=model_config.model_name_or_path,
+        tokenizer=tokenizer_name,
+        model_kwargs=model_kwargs,
         function_to_apply="none",
     )
+
+    if not reward_pipeline.tokenizer.pad_token:
+        reward_pipeline.tokenizer.pad_token_id = reward_pipeline.tokenizer.eos_token_id
+        reward_pipeline.model.config.pad_token_id = reward_pipeline.tokenizer.pad_token_id
 
     relabel_dataset = DatasetDict()
     for split in [args.train_split, args.eval_split]:
@@ -143,7 +139,7 @@ if __name__ == "__main__":
         dataset = dataset.add_column("rejected_score", scores["rejected"])
 
         chosen_wins = sum(chosen > rejected for chosen, rejected in zip(scores["chosen"], scores["rejected"]))
-        agree_rate = chosen_wins / len(chosen_wins)
+        agree_rate = chosen_wins / len(scores["chosen"])
         print(f"Agreement rate {agree_rate}")
 
         dataset = dataset.map(relabel_dataset_fn, batched=True)

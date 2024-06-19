@@ -1,0 +1,5 @@
+dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_llama8b
+model_name: meta-llama/Meta-Llama-3-8B-Instruct
+output_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel2_llama8b
+eval_split: null 
+push_to_hub: True

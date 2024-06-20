@@ -1,11 +1,12 @@
-task_type: "tldr"
-output_dir: dpo_pythia410m_tldr
-run_name: dpo_pythia410m_tldr
+task_type: tldr
+output_dir: dpo_pythia410m_tldr6.9b
+run_name: dpo_pythia410m_tldr6.9b
 wandb_run_id: snow
-# hub_model_id: "mnoukhov/pythia410m-dpo-tldr-full"
+output_global_parent_dir: /home/toolkit/trl_summarize/results
 push_to_hub: False
-model_name_or_path: "mnoukhov/pythia410m-sft-tldr"
-dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia1b
+#
+model_name_or_path: mnoukhov/pythia410m-sft-tldr
+dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b
 dataset_test_split: validation
 learning_rate: 1.0e-6
 lr_scheduler_type: cosine

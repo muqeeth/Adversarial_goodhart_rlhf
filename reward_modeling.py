@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import torch
-from datasets import load_dataset
+from datasets import load_dataset, builder
 from peft import LoraConfig
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -14,6 +14,8 @@ from src.utils import TRLParser
 
 
 tqdm.pandas()
+
+builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 
 @dataclass

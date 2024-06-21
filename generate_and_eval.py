@@ -5,6 +5,8 @@ from typing import List, Optional
 
 import numpy as np
 import torch
+from accelerate import PartialState
+from accelerate.utils import gather_object
 from datasets import builder, load_dataset
 from peft import PeftModelForCausalLM
 from tqdm.auto import tqdm
@@ -107,13 +109,12 @@ def generate(script_args):
             del merged
             model_name_or_path = model_save_path
 
-        assert script_args.num_gpus == 1
         llm = LLM(
             model=model_name_or_path,
             tokenizer=script_args.tokenizer_name,
             dtype=script_args.gen_dtype,
             trust_remote_code=True,
-            # tensor_parallel_size=1,
+            tensor_parallel_size=1,
             # device="cuda:0",
         )
 
@@ -131,7 +132,7 @@ def generate(script_args):
         del llm
         gc.collect()
         torch.cuda.empty_cache()
-        # torch.distributed.destroy_process_group()
+        torch.distributed.destroy_process_group()
 
     if script_args.save_generations:
         # TODO add hash to dataset path
@@ -156,46 +157,60 @@ def generate(script_args):
     return prompts, reference, gens
 
 
-def evaluate(args, prompts, reference, generations, log_to_wandb=False):
+def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=False):
+    state = PartialState()
     torch_dtype = args.eval_dtype if args.eval_dtype in ["auto", None] else getattr(torch, args.eval_dtype)
-    gold_tokenizer_name = args.gold_tokenizer_name if args.gold_tokenizer_name is not None else args.gold_model_name
-    tokenizer = AutoTokenizer.from_pretrained(gold_tokenizer_name)
-    if not tokenizer.pad_token:
-        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.gold_model_name,
-        revision=args.gold_model_revision,
+    model_kwargs = dict(
         torch_dtype=torch_dtype,
-        device_map="auto",
     )
 
-    model.config.pad_token_id = tokenizer.pad_token_id
+    tokenizer_name = args.gold_tokenizer_name if args.gold_tokenizer_name is not None else args.gold_model_name
 
     reward_pipeline = pipeline(
         task="text-classification",
-        model=model,
-        tokenizer=tokenizer,
-        device_map="auto",
+        model=args.gold_model_name,
+        tokenizer=tokenizer_name,
         function_to_apply="none",
-        batch_size=args.eval_batch_size,
+        model_kwargs=model_kwargs,
+        device_map={"": state.process_index},
     )
 
-    ref_rewards = []
-    for out in tqdm(
-        reward_pipeline(reference, batch_size=args.eval_batch_size),
-        total=len(reference),
-    ):
-        if isinstance(out, dict):
-            out = [out]
-        ref_rewards.extend([o["score"] for o in out])
+    if not reward_pipeline.tokenizer.pad_token:
+        reward_pipeline.tokenizer.pad_token_id = reward_pipeline.tokenizer.eos_token_id
+        reward_pipeline.model.config.pad_token_id = reward_pipeline.tokenizer.pad_token_id
 
+    ref_rewards = []
+    with state.split_between_processes(all_reference) as reference:
+        for out in tqdm(
+            reward_pipeline(reference, batch_size=args.eval_batch_size),
+            total=len(reference),
+            disable=not state.is_local_main_process,
+            desc="Reference",
+        ):
+            if isinstance(out, dict):
+                out = [out]
+            ref_rewards.extend([o["score"] for o in out])
+
+    state.print(len(ref_rewards))
+    ref_rewards = gather_object(ref_rewards)
     ref_rewards = np.array(ref_rewards)
 
     step = 0
-    for step_str, query_response in generations.items():
-        gen_outputs = reward_pipeline(query_response)
-        gen_rewards = np.array([out["score"] for out in gen_outputs])
+    for step_str, all_query_response in all_generations.items():
+        gen_rewards = []
+        with state.split_between_processes(all_query_response) as query_response:
+            for out in tqdm(
+                reward_pipeline(query_response, batch_size=args.eval_batch_size),
+                total=len(query_response),
+                disable=not state.is_local_main_process,
+                desc=f"Step {step_str}",
+            ):
+                if isinstance(out, dict):
+                    out = [out]
+                gen_rewards.extend([o["score"] for o in out])
+
+        gen_rewards = gather_object(gen_rewards)
+        gen_rewards = np.array(gen_rewards)
 
         win_rate = (gen_rewards > ref_rewards).mean().item()
         norm_reward = (gen_rewards - ref_rewards).mean().item()
@@ -248,11 +263,12 @@ if __name__ == "__main__":
 
     print("GENERATING")
     prompts, reference, generations = generate(generate_args)
-    #
+    # #
     # dataset = load_dataset(generate_args.dataset_name, split=generate_args.split)
-    # dataset = dataset.select(range(100))
-    # generations = {"step0": dataset["query_reference_response"]}
+    # prompts = dataset["query"]
     # reference = dataset["query_reference_response"]
+    # generations = {"step0": dataset["query_reference_response"]}
+
     if eval_args.wandb_run_id == "snow":
         # remove extra / at end
         normpath = os.path.normpath(generate_args.model_name_or_path)

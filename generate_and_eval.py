@@ -228,11 +228,15 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
         if log_to_wandb:
             num_samples = 32
             sample_generations = wandb.Table(
-                columns=["Prompt", "Policy", "Reference"],
+                columns=["Prompt", "Policy", "Policy Reward", "Reference", "Reference Reward"],
                 rows=[
-                    [prompt, pol[len(prompt) :], ref[len(prompt) :]]
-                    for prompt, pol, ref in zip(
-                        prompts[:num_samples], query_response[:num_samples], reference[:num_samples]
+                    [prompt, pol[len(prompt) :], pol_reward, ref[len(prompt) :], ref_reward]
+                    for prompt, pol, pol_reward, ref, ref_reward in zip(
+                        prompts[:num_samples],
+                        query_response[:num_samples],
+                        gen_rewards[:num_samples],
+                        reference[:num_samples],
+                        ref_rewards[:num_samples],
                     )
                 ],
             )

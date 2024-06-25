@@ -59,8 +59,9 @@ if __name__ == "__main__":
         config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
 
     if args.wandb_run_id == "snow":
-        wandb_run_id = os.path.basename(os.getcwd())
-        os.environ["WANDB_RUN_ID"] = wandb_run_id + "_" + config.run_name
+        run_id = os.path.basename(os.getcwd())
+        output_dir_basename = os.path.basename(config.output_dir)
+        os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
 
     ################
     # Model & Tokenizer

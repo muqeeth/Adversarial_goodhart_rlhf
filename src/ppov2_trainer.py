@@ -1,4 +1,5 @@
 import gc
+import math
 import os
 import time
 from collections import OrderedDict, defaultdict
@@ -10,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import broadcast, gather_object
+from accelerate.utils import gather_object
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import (
@@ -23,7 +24,8 @@ from transformers import (
     TrainerState,
 )
 from transformers.integrations import get_reporting_integration_callbacks
-from transformers.trainer_callback import CallbackHandler, DefaultFlowCallback
+from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
+from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.core import masked_mean, masked_whiten
 from trl.models.utils import unwrap_model_for_generation
 from trl.trainer.ppov2_config import PPOv2Config
@@ -122,9 +124,9 @@ class PPOv2Trainer(Trainer):
         # `per_rank_rollout_batch_size` is our `args.local_batch_size`
         # `per_rank_minibatch_size` is our `args.local_mini_batch_size`
         args.num_updates = args.total_episodes // args.batch_size
-        time_tensor = torch.tensor(int(time.time()), device=accelerator.device)
-        time_int = broadcast(time_tensor, 0).item()  # avoid different timestamps across processes
-        args.run_name = f"{args.exp_name}__{args.seed}__{time_int}"
+        # time_tensor = torch.tensor(int(time.time()), device=accelerator.device)
+        # time_int = broadcast(time_tensor, 0).item()  # avoid different timestamps across processes
+        # args.run_name = f"{args.exp_name}__{args.seed}__{time_int}"
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
             self.sample_generations_freq = max(1, args.num_updates // args.num_sample_generations)
@@ -146,13 +148,12 @@ class PPOv2Trainer(Trainer):
             is_local_process_zero=self.is_local_process_zero(),
             is_world_process_zero=self.is_world_process_zero(),
         )
-        DEFAULT_CALLBACKS = [DefaultFlowCallback]
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
-        if self.callbacks is None:
-            self.callbacks = default_callbacks
+        callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
         self.callback_handler = CallbackHandler(
             self.callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler
         )
+        self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
         self.control = TrainerControl()
         self.is_deepspeed_enabled = getattr(self.accelerator.state, "deepspeed_plugin", None) is not None
         self.is_fsdp_enabled = getattr(self.accelerator.state, "fsdp_plugin", None) is not None
@@ -252,7 +253,7 @@ class PPOv2Trainer(Trainer):
         )
 
         accelerator.print("===training policy===")
-        global_step = 0
+        episode = 0
         start_time = time.time()
         stats_shape = (args.num_ppo_epochs, args.num_mini_batches, args.gradient_accumulation_steps)
         approxkl_stats = torch.zeros(stats_shape, device=device)
@@ -263,8 +264,31 @@ class PPOv2Trainer(Trainer):
         entropy_stats = torch.zeros(stats_shape, device=device)
         ratio_stats = torch.zeros(stats_shape, device=device)
         model.train()
+        self.state.max_steps = args.num_updates
+        self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
+        self.state.is_local_process_zero = self.is_local_process_zero()
+        self.state.is_world_process_zero = self.is_world_process_zero()
+
+        # Compute absolute values for logging, eval, and save if given as ratio
+        if args.logging_steps is not None:
+            if args.logging_steps < 1:
+                self.state.logging_steps = math.ceil(self.state.max_steps * args.logging_steps)
+            else:
+                self.state.logging_steps = args.logging_steps
+        if args.eval_steps is not None:
+            if args.eval_steps < 1:
+                self.state.eval_steps = math.ceil(self.state.max_steps * args.eval_steps)
+            else:
+                self.state.eval_steps = args.eval_steps
+        if args.save_steps is not None:
+            if args.save_steps < 1:
+                self.state.save_steps = math.ceil(self.state.max_steps * args.save_steps)
+            else:
+                self.state.save_steps = args.save_steps
+
+        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for update in range(1, args.num_updates + 1):
-            global_step += 1 * args.batch_size
+            episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
             with torch.no_grad():
@@ -473,7 +497,7 @@ class PPOv2Trainer(Trainer):
                 mean_entropy = (-logprobs).sum(1).mean()
                 mean_non_score_reward = non_score_reward.sum(1).mean()
                 rlhf_reward = mean_non_score_reward + scores.mean()
-                eps = int(global_step / (time.time() - start_time))
+                eps = int(episode / (time.time() - start_time))
                 metrics = {}
                 metrics["eps"] = eps
                 metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()
@@ -491,16 +515,23 @@ class PPOv2Trainer(Trainer):
                 metrics["val/ratio_var"] = self.accelerator.gather(ratio_stats).var().item()
                 metrics["val/num_eos_tokens"] = (responses == tokenizer.eos_token_id).sum().item()
                 metrics["lr"] = self.lr_scheduler.get_last_lr()[0]
-                metrics["episode"] = global_step
-                self.state.epoch = global_step / self.train_dataset_len  # used by self.log
+                metrics["episode"] = episode
+                self.state.epoch = episode / self.train_dataset_len  # used by self.log
                 self.log(metrics)
-            del kl, mean_kl, mean_entropy, mean_non_score_reward, scores, metrics, non_score_reward
+            del kl, mean_kl, mean_entropy, mean_non_score_reward, scores, non_score_reward
             torch.cuda.empty_cache()
             gc.collect()
 
             if args.num_sample_generations > 0 and (update - 1) % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)
                 torch.cuda.empty_cache()
+
+            self.state.global_step = update
+            self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+            if self.control.should_save:
+                self._save_checkpoint(model, trial=None, metrics=metrics)
+                self.control = self.callback_handler.on_save(self.args, self.state, self.control)
+
             del (
                 query_responses,
                 responses,
@@ -519,8 +550,11 @@ class PPOv2Trainer(Trainer):
                 actual_end,
                 advantages,
                 returns,
+                metrics,
             )
             torch.cuda.empty_cache()
+
+        self.control = self.callback_handler.on_train_end(args, self.state, self.control)
 
     def generate_completions(self, sampling: bool = False):
         args = self.args

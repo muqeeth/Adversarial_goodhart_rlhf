@@ -13,8 +13,6 @@ from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
-
-# from src.rloo_trainer_vllm import RLOOTrainer as RLOOTrainerVLLM
 from src.utils import TRLParser
 
 

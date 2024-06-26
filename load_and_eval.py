@@ -96,7 +96,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
         if step_str.isdigit():
             step = int(step_str)
         else:
-            print(f"Warning step name {step_str} is not an integer")
+            state.print(f"Warning step name {step_str} is not an integer")
             step = step + 1
 
         if log_to_wandb:
@@ -124,7 +124,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
                 },
             )
 
-        print(f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward}")
+        state.print(f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward}")
 
 
 if __name__ == "__main__":

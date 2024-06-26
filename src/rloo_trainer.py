@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import broadcast, gather_object
+from accelerate.utils import gather_object
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from transformers import (

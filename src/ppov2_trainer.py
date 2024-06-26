@@ -36,10 +36,11 @@ from trl.trainer.utils import (
     forward,
     generate,
     get_reward,
-    prepare_deepspeed,
     print_rich_table,
     truncate_response,
 )
+
+from src.utils import prepare_deepspeed
 
 
 INVALID_LOGPROB = 1.0
@@ -192,8 +193,12 @@ class PPOv2Trainer(Trainer):
         self.eval_dataloader = accelerator.prepare(self.eval_dataloader)
 
         if self.is_deepspeed_enabled:
-            self.reward_model = prepare_deepspeed(self.reward_model, args.per_device_train_batch_size)
-            self.ref_policy = prepare_deepspeed(self.ref_policy, args.per_device_train_batch_size)
+            self.reward_model = prepare_deepspeed(
+                self.reward_model, args.per_device_train_batch_size, args.bf16, args.fp16
+            )
+            self.ref_policy = prepare_deepspeed(
+                self.ref_policy, args.per_device_train_batch_size, args.bf16, args.fp16
+            )
         else:
             self.ref_policy = self.ref_policy.to(self.accelerator.device)
             self.reward_model = self.reward_model.to(self.accelerator.device)
@@ -218,7 +223,7 @@ class PPOv2Trainer(Trainer):
             self.model = self.accelerator.unwrap_model(self.model).policy  # save only the policy
         if output_dir is None:
             output_dir = self.args.output_dir
-        state_dict = self.accelerator.get_state_dict(self.backup_model)
+        state_dict = self.accelerator.get_state_dict(self.model)
         policy_state_dict = state_dict
         if self.accelerator.is_main_process:
             policy_state_dict = OrderedDict(

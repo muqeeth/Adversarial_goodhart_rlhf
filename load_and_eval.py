@@ -12,6 +12,7 @@ from transformers import (
     pipeline,
 )
 
+import src.perplexity
 import wandb
 from src.utils import TRLParser
 
@@ -22,6 +23,7 @@ builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 @dataclass
 class EvalScriptArguments:
     model_name_or_path: str = None
+    ref_model_name: Optional[str] = None
     sanity_check: Optional[bool] = False
     wandb_run_id: Optional[str] = field(default=None)
     gold_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
@@ -37,6 +39,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
     torch_dtype = args.eval_dtype if args.eval_dtype in ["auto", None] else getattr(torch, args.eval_dtype)
     model_kwargs = dict(
         torch_dtype=torch_dtype,
+        device_map={"": state.process_index},
     )
 
     tokenizer_name = args.gold_tokenizer_name if args.gold_tokenizer_name is not None else args.gold_model_name
@@ -47,12 +50,17 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
         tokenizer=tokenizer_name,
         function_to_apply="none",
         model_kwargs=model_kwargs,
-        device_map={"": state.process_index},
     )
 
     if not reward_pipeline.tokenizer.pad_token:
         reward_pipeline.tokenizer.pad_token_id = reward_pipeline.tokenizer.eos_token_id
         reward_pipeline.model.config.pad_token_id = reward_pipeline.tokenizer.pad_token_id
+
+    ppl_pipeline = pipeline(
+        task="perplexity",
+        model=args.ref_model_name,
+        model_kwargs=model_kwargs,
+    )
 
     ref_rewards = []
     with state.split_between_processes(all_reference) as reference:
@@ -72,19 +80,32 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
     step = 0
     for step_str, all_query_response in all_generations.items():
         gen_rewards = []
+        gen_ppls = []
         with state.split_between_processes(all_query_response) as query_response:
             for out in tqdm(
                 reward_pipeline(query_response, batch_size=args.eval_batch_size),
                 total=len(query_response),
                 disable=not state.is_local_main_process,
-                desc=f"Step {step_str}",
+                desc=f"Reward Step {step_str}",
             ):
                 if isinstance(out, dict):
                     out = [out]
                 gen_rewards.extend([o["score"] for o in out])
 
+            for out in tqdm(
+                ppl_pipeline(query_response, prompt_template="TL;DR:", batch_size=args.eval_batch_size),
+                total=len(query_response),
+                disable=not state.is_local_main_process,
+                desc=f"PPL Step {step_str}",
+            ):
+                gen_ppls += [r["ppl"] for r in out]
+
         gen_rewards = gather_object(gen_rewards)
         gen_rewards = np.array(gen_rewards)
+
+        gen_ppls = gather_object(gen_ppls)
+        gen_ppls = np.array(gen_ppls)
+        mean_ppl = gen_ppls.mean().item()
 
         win_rate = (gen_rewards > ref_rewards).mean().item()
         norm_reward = (gen_rewards - ref_rewards).mean().item()
@@ -119,12 +140,13 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
                     "gold/win_rate": win_rate,
                     "gold/norm_reward": norm_reward,
                     "gold/reward": mean_reward,
+                    "gold/ppl": mean_ppl,
                     "gold/samples": sample_generations,
                     "train/global_step": step,
                 },
             )
 
-        state.print(f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward}")
+        state.print(f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward} ppl {mean_ppl}")
 
 
 if __name__ == "__main__":
@@ -154,9 +176,6 @@ if __name__ == "__main__":
         config_name = path_parts[-1]
         run_id = path_parts[-2]
         args.wandb_run_id = run_id + "_" + config_name
-        import pdb
-
-        pdb.set_trace()
 
     log_to_wandb = args.wandb_run_id is not None
     if log_to_wandb:

@@ -239,6 +239,7 @@ class PPOv2Trainer(Trainer):
         accelerator = self.accelerator
         optimizer = self.optimizer
         model = self.model
+        self.model_wrapped = self.model
         ref_policy = self.ref_policy
         reward_model = self.reward_model
         tokenizer = self.tokenizer

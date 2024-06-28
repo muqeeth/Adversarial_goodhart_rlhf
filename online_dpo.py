@@ -115,4 +115,9 @@ if __name__ == "__main__":
             trainer.push_to_hub()
         trainer.generate_completions()
 
-        os.environ["OUTPUT_DIR"] = config.output_dir
+        try:
+            os.remove("output_dir")
+        except OSError:
+            pass
+
+        os.symlink(config.output_dir, "output_dir")

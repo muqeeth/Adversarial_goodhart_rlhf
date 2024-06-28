@@ -220,7 +220,7 @@ else
 		--env WANDB_API_KEY=${WANDB_API_KEY} \
 		--env WANDB_ENTITY=${WANDB_ENTITY} \
 		--env WANDB_PROJECT=${WANDB_PROJECT} \
-		--env NUM_GPUS=${_GPU} \
+		--env GPU=${_GPU} \
 		--workdir $(_WORKDIR) \
 		--image $(IMAGE):$(IMAGE_REVISION) \
 		--data $(ORG).$(USER).home:/home/toolkit \

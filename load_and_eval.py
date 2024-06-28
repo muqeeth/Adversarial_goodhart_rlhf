@@ -120,7 +120,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
             state.print(f"Warning step name {step_str} is not an integer")
             step = step + 1
 
-        if log_to_wandb:
+        if log_to_wandb and state.is_main_process:
             num_samples = 32
             sample_generations = wandb.Table(
                 columns=["Prompt", "Policy", "Policy Reward", "Reference", "Reference Reward"],
@@ -178,7 +178,8 @@ if __name__ == "__main__":
         args.wandb_run_id = run_id + "_" + config_name
 
     log_to_wandb = args.wandb_run_id is not None
-    if log_to_wandb:
+    state = PartialState()
+    if log_to_wandb and state.is_main_process:
         wandb.init(id=args.wandb_run_id, resume="allow")
         print(f"Logging to WandB {args.wandb_run_id}")
 

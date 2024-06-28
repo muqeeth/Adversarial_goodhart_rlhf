@@ -114,3 +114,5 @@ if __name__ == "__main__":
         if config.push_to_hub:
             trainer.push_to_hub()
         trainer.generate_completions()
+
+        os.environ["OUTPUT_DIR"] = config.output_dir

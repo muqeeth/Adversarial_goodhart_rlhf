@@ -1,2 +1,2 @@
 python generate_for_eval.py --config configs/generate_tldr.yml $@ && \
-accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes $NPROC load_and_eval.py --config configs/evaluate_tldr.yml $@
+accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=$NUM_GPUS load_and_eval.py --config configs/evaluate_tldr.yml $@

@@ -1,17 +1,21 @@
 import warnings
 
 import torch
-from torch.nn import CrossEntropyLoss
+import torch.nn.functional as F
+from torch.nn import KLDivLoss
 from transformers import AutoModelForCausalLM, Pipeline
 from transformers.pipelines import PIPELINE_REGISTRY
 
 
-class PerplexityPipeline(Pipeline):
+class KLPipeline(Pipeline):
     label_pad_token_id = -100
 
-    def __init__(self, **kwargs):
-        self.loss_fct = CrossEntropyLoss(reduction="none")
+    def __init__(self, ref_model, **kwargs):
         super().__init__(**kwargs)
+        self.loss_fct = KLDivLoss(reduction="none", log_target=True)
+        self.ref_model = AutoModelForCausalLM.from_pretrained(
+            ref_model, torch_dtype=kwargs.get("torch_dtype", None), device_map=self.model.hf_device_map
+        )
 
     def __call__(self, inputs, **kwargs):
         inputs = (inputs,)
@@ -42,33 +46,35 @@ class PerplexityPipeline(Pipeline):
         if self.model.config.pad_token_id is None:
             self.model.config.pad_token_id = pad_token_id
 
-        out_logits = self.model(
+        model_logits = self.model(
             input_ids=model_inputs["input_ids"],
             attention_mask=model_inputs["attention_mask"],
-            labels=model_inputs["labels"],
             use_cache=False,
         ).logits
 
-        shift_logits = out_logits[..., :-1, :]
-        shift_labels = model_inputs["labels"][..., 1:]
-        shift_attention_mask_batch = model_inputs["attention_mask"][..., 1:]
+        ref_model_logits = self.ref_model(
+            input_ids=model_inputs["input_ids"],
+            attention_mask=model_inputs["attention_mask"],
+            use_cache=False,
+        ).logits
 
-        nll_batch = (self.loss_fct(shift_logits.transpose(1, 2), shift_labels) * shift_attention_mask_batch).sum(
-            1
-        ) / shift_attention_mask_batch.sum(1)
+        kl_loss = self.loss_fct(
+            F.log_softmax(model_logits, dim=-1),
+            F.log_softmax(ref_model_logits, dim=-1),
+        )
 
-        return nll_batch
+        prompt_masked_kl_loss = kl_loss.sum(-1) * (model_inputs["labels"] != self.label_pad_token_id)
+
+        return prompt_masked_kl_loss.sum(-1)
 
     def postprocess(self, model_outputs, function_to_apply=None, top_k=1, _legacy=True):
-        nll_tensor = model_outputs
-        ppl_tensor = torch.exp(nll_tensor)
-
-        return [{"nll": nll.item(), "ppl": ppl.item()} for nll, ppl in zip(nll_tensor, ppl_tensor)]
+        kl_tensor = model_outputs
+        return [{"kl": kl.item()} for kl in kl_tensor]
 
 
 PIPELINE_REGISTRY.register_pipeline(
-    "perplexity",
-    pipeline_class=PerplexityPipeline,
+    "kl",
+    pipeline_class=KLPipeline,
     pt_model=AutoModelForCausalLM,
 )
 
@@ -97,14 +103,24 @@ def ignore_prompt_labels(batch, response_token_ids, ignore_index=-100, tokenizer
 if __name__ == "__main__":
     from transformers import pipeline
 
+    model_name = "mnoukhov/pythia160m-sft-tldr"
+    ref_model_name = "mnoukhov/pythia410m-sft-tldr"
+
     query_response = [
-        "This is a post\n TL;DR: This is a summary ",
-        "This is another post\n TL;DR: This is another summary ",
+        "This is a post\nTL;DR: This is a summary ",
+        "This is another post\nTL;DR: This is another summary ",
     ]
 
-    ppl_pipeline = pipeline(
-        task="perplexity",
-        model="mnoukhov/pythia410m-sft-tldr",
+    model_kwargs = dict(
+        torch_dtype=torch.float16,
+        device_map={"": 0},
     )
 
-    ppls = ppl_pipeline(query_response, prompt_template="TL;DR:")
+    kl_pipeline = pipeline(
+        task="kl",
+        model=model_name,
+        ref_model=ref_model_name,
+        **model_kwargs,
+    )
+
+    kls = kl_pipeline(query_response, prompt_template="TL;DR:", batch_size=2)

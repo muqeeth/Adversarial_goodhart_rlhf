@@ -108,14 +108,18 @@ define get_job_logs
 endef
 
 REVISION ?= $(shell git rev-parse HEAD)
-SNAPSHOT ?= 1
+LOCAL ?= 0  # Use LOCAL=1 for local execution of the latest snapshot
+ifeq ($(LOCAL),1)
+	SNAPSHOT := 0
+else
+	SNAPSHOT := 1
+endif
 ifeq ($(SNAPSHOT),1)
 	_WORKDIR := /home/toolkit/snapshots/$(REVISION)
 else
 	_WORKDIR := $(PWD)
 endif
 
-LOCAL ?= 0  # Use LOCAL=1 for local execution of the latest snapshot
 DRY_RUN ?= 0  # Use DRY_RUN=1 to print the commands instead of executing them
 # define DRY_RUN_PREFIX
 ifeq ($(DRY_RUN), 1)
@@ -216,6 +220,7 @@ else
 		--env WANDB_API_KEY=${WANDB_API_KEY} \
 		--env WANDB_ENTITY=${WANDB_ENTITY} \
 		--env WANDB_PROJECT=${WANDB_PROJECT} \
+		--env NPROC=${NPROC} \
 		--workdir $(_WORKDIR) \
 		--image $(IMAGE):$(IMAGE_REVISION) \
 		--data $(ORG).$(USER).home:/home/toolkit \

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.nn import KLDivLoss
 from transformers import AutoModelForCausalLM, Pipeline
 from transformers.pipelines import PIPELINE_REGISTRY
+from transformers.utils import ModelOutput
 
 
 class KLPipeline(Pipeline):
@@ -64,12 +65,15 @@ class KLPipeline(Pipeline):
         )
 
         prompt_masked_kl_loss = kl_loss.sum(-1) * (model_inputs["labels"] != self.label_pad_token_id)
+        output_lengths = (model_inputs["labels"] != self.label_pad_token_id).sum(-1)
 
-        return prompt_masked_kl_loss.sum(-1)
+        return ModelOutput(kls=prompt_masked_kl_loss.sum(-1), lengths=output_lengths)
 
     def postprocess(self, model_outputs, function_to_apply=None, top_k=1, _legacy=True):
-        kl_tensor = model_outputs
-        return [{"kl": kl.item()} for kl in kl_tensor]
+        return [
+            {"kl_sum": kl.item(), "kl_mean": (kl / length).item()}
+            for kl, length in zip(model_outputs.kls, model_outputs.lengths)
+        ]
 
 
 PIPELINE_REGISTRY.register_pipeline(
@@ -124,3 +128,4 @@ if __name__ == "__main__":
     )
 
     kls = kl_pipeline(query_response, prompt_template="TL;DR:", batch_size=2)
+    print(kls)

@@ -8,9 +8,7 @@ from accelerate import PartialState
 from accelerate.utils import gather_object
 from datasets import builder, load_from_disk
 from tqdm.auto import tqdm
-from transformers import (
-    pipeline,
-)
+from transformers import pipeline
 
 import src.perplexity
 import wandb

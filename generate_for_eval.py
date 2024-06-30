@@ -1,4 +1,5 @@
 import gc
+import json
 import os
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -55,6 +56,7 @@ def generate(script_args):
     )
 
     gens = {}
+    trainer_states = {}
     model_paths = [script_args.model_name_or_path]
     # path with possible checkpoint subfolders
     if os.path.exists(script_args.model_name_or_path):
@@ -113,6 +115,10 @@ def generate(script_args):
         torch.cuda.empty_cache()
         # torch.distributed.destroy_process_group()
 
+        with open(os.path.join(model_name_or_path, "trainer_state.json"), "r") as f:
+            state = json.load(f)
+            trainer_states[model_or_checkpoint_name] = state
+
     if script_args.save_generations:
         # TODO add hash to dataset path
         # sampling_str = str(sampling_params)
@@ -129,6 +135,9 @@ def generate(script_args):
         dataset.save_to_disk(dataset_path)
         with open(os.path.join(dataset_path, "sampling_params.txt"), "w") as f:
             print(sampling_params, file=f)
+
+        with open(os.path.join(dataset_path, "trainer_states.json"), "w") as f:
+            json.dump(trainer_states, f)
 
     print(f"generated {len(gens)} steps")
 

@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -32,7 +33,7 @@ class EvalScriptArguments:
     flash_attention: Optional[bool] = field(default=False)
 
 
-def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=False):
+def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, log_to_wandb=False):
     state = PartialState()
     torch_dtype = args.eval_dtype if args.eval_dtype in ["auto", None] else getattr(torch, args.eval_dtype)
     model_kwargs = dict(
@@ -79,6 +80,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
     for step_str, all_query_response in all_generations.items():
         gen_rewards = []
         gen_ppls = []
+        episode = all_episodes[step_str]
         with state.split_between_processes(all_query_response) as query_response:
             for out in tqdm(
                 reward_pipeline(query_response, batch_size=args.eval_batch_size),
@@ -141,6 +143,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, log_to_wandb=Fal
                     "gold/ppl": mean_ppl,
                     "gold/samples": sample_generations,
                     "train/global_step": step,
+                    "train/episode": episode,
                 },
             )
 
@@ -153,15 +156,21 @@ if __name__ == "__main__":
 
     generated_dataset_path = os.path.join(args.model_name_or_path, "_generations")
     dataset = load_from_disk(generated_dataset_path)
+
+    with open(os.path.join(generated_dataset_path, "trainer_states.json"), "r") as f:
+        trainer_states = json.load(f)
+
     prompts = dataset["query"]
     reference = dataset["query_reference_response"]
 
     generations_cols = [name for name in dataset.column_names if name.startswith("generation")]
     generations = {}
+    episodes = {}
     for col_name in generations_cols:
         # column name should be generations_{step name}
         checkpoint_name = col_name.split("_")[1]
         generations[checkpoint_name] = dataset[col_name]
+        episodes[checkpoint_name] = trainer_states[checkpoint_name]["episode"]
 
     if args.sanity_check:
         args.wandb_run_id = None
@@ -181,4 +190,4 @@ if __name__ == "__main__":
         wandb.init(id=args.wandb_run_id, resume="allow")
         print(f"Logging to WandB {args.wandb_run_id}")
 
-    evaluate(args, prompts, reference, generations, log_to_wandb)
+    evaluate(args, prompts, reference, generations, episodes, log_to_wandb)

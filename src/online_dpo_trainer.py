@@ -601,6 +601,9 @@ class OnlineDPOTrainer(RLOOTrainer):
                 self.generate_completions(sampling=True)
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
+        if self.control.should_save:
+            self._save_checkpoint(model, trial=None, metrics=None)
+            self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
         if self.args.save_generations:
             if accelerator.is_local_main_process:

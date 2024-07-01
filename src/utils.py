@@ -2,13 +2,21 @@ import logging
 import os
 import sys
 from argparse import Namespace
+from dataclasses import dataclass
 
 import yaml
 from accelerate.state import AcceleratorState
-from transformers import HfArgumentParser
+from transformers import HfArgumentParser, TrainerState
 
 
 logger = logging.getLogger(__name__)
+
+INVALID_LOGPROB = 1.0
+
+
+@dataclass
+class OnlineTrainerState(TrainerState):
+    episode: int = 0
 
 
 class YamlConfigParser:

@@ -81,6 +81,8 @@ if __name__ == "__main__":
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"
+        config.total_episodes = 64
+        config.per_device_batch_size = 8
         config.num_sample_generations = 0
 
     train_dataset = raw_datasets[args.dataset_train_split]
@@ -113,3 +115,10 @@ if __name__ == "__main__":
         if config.push_to_hub:
             trainer.push_to_hub()
         trainer.generate_completions()
+
+        try:
+            os.remove("output_dir")
+        except OSError:
+            pass
+
+        os.symlink(config.output_dir, "output_dir")

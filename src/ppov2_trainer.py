@@ -209,30 +209,16 @@ class PPOv2Trainer(Trainer):
     def get_eval_dataloader(self) -> DataLoader:
         return self.eval_dataloader
 
-    def push_to_hub(self, **kwargs):
-        """Modified from `Trainer.save_model` to only save the policy and not the value network."""
-        self.backup_model = self.model
-        self.model = self.accelerator.unwrap_model(self.model).policy  # save only the policy
-        super().push_to_hub(**kwargs)
-        self.model = self.backup_model
-
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         """Modified from `Trainer.save_model` to only save the policy and not the value network."""
-        if not _internal_call:  # `push_to_hub` already swaps out the self.model with policy
-            self.backup_model = self.model
-            self.model = self.accelerator.unwrap_model(self.model).policy  # save only the policy
-        if output_dir is None:
-            output_dir = self.args.output_dir
-        state_dict = self.accelerator.get_state_dict(self.model)
-        policy_state_dict = state_dict
-        if self.accelerator.is_main_process:
-            policy_state_dict = OrderedDict(
-                {k[len("policy.") :]: v for k, v in state_dict.items() if k.startswith("policy.")}
-            )
-        if self.args.should_save:
-            self._save(output_dir, state_dict=policy_state_dict)
-        if not _internal_call:
-            self.model = self.backup_model
+        temp_model = self.model
+        self.model = self.model.policy  # save only the policy
+        self.deepspeed = self.model  # need for deepspeed backwards compatibility
+
+        super().save_model(output_dir, _internal_call)
+
+        self.model = temp_model
+        self.deepspeed = temp_model
 
     def train(self):
         args = self.args

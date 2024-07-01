@@ -119,3 +119,10 @@ if __name__ == "__main__":
         if config.push_to_hub:
             trainer.push_to_hub()
         trainer.generate_completions()
+
+        try:
+            os.remove("output_dir")
+        except OSError:
+            pass
+
+        os.symlink(config.output_dir, "output_dir")

@@ -10,9 +10,8 @@ from transformers import (
     AutoTokenizer,
 )
 from trl import ModelConfig
-from trl.trainer.ppov2_config import PPOv2Config
 
-from src.ppov2_trainer import PPOv2Trainer
+from src.ppov2_trainer import ElasticPPOv2Config, PPOv2Trainer
 from src.utils import TRLParser
 
 
@@ -46,7 +45,7 @@ def prepare_dataset(dataset, tokenizer):
 
 
 if __name__ == "__main__":
-    parser = TRLParser((ScriptArguments, PPOv2Config, ModelConfig))
+    parser = TRLParser((ScriptArguments, ElasticPPOv2Config, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
 
     if args.output_global_parent_dir is not None:
@@ -81,8 +80,9 @@ if __name__ == "__main__":
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"
-        config.total_episodes = 64
+        config.total_episodes = 1024
         config.per_device_batch_size = 8
+        config.gradient_accumulation_steps = 1
         config.num_sample_generations = 0
 
     train_dataset = raw_datasets[args.dataset_train_split]

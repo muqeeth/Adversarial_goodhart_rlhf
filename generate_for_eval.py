@@ -116,9 +116,13 @@ def generate(script_args):
         torch.cuda.empty_cache()
         # torch.distributed.destroy_process_group()
 
-        with open(os.path.join(model_name_or_path, "trainer_state.json"), "r") as f:
-            state = json.load(f)
-            trainer_states[model_or_checkpoint_name] = state
+        trainer_state_path = os.path.join(model_name_or_path, "trainer_state.json")
+        if os.path.exists(trainer_state_path):
+            with open(trainer_state_path, "r") as f:
+                state = json.load(f)
+                trainer_states[model_or_checkpoint_name] = state
+        else:
+            trainer_states[model_or_checkpoint_name] = {}
 
     if script_args.save_generations:
         # TODO add hash to dataset path

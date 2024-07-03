@@ -40,6 +40,7 @@ class GenerateScriptArguments:
     max_new_tokens: Optional[int] = field(default=48, metadata={"help": "max new tokens"})
     gen_dtype: Optional[str] = field(default="auto")
     sanity_check: Optional[bool] = field(default=False)
+    wandb_run_id: str = None  # unused
 
 
 def generate(script_args):

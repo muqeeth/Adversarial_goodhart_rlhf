@@ -175,6 +175,7 @@ if __name__ == "__main__":
     if args.sanity_check:
         args.wandb_run_id = None
         generations = {checkpoint_name: dataset[col_name][:100]}
+        reference = reference[:100]
 
     if args.wandb_run_id == "snow":
         # remove extra / at end

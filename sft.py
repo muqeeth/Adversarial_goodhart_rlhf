@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     if args.sanity_check:
         for key in datasets:
-            datasets[key] = datasets[key].select(range(100))
+            datasets[key] = datasets[key].select(range(1024))
 
         config.report_to = []
         config.push_to_hub = False
@@ -110,6 +110,7 @@ if __name__ == "__main__":
     trainer.save_model(config.output_dir)
 
     if config.push_to_hub:
+        trainer.push_to_hub()
         if PartialState().is_main_process and model_config.use_peft:
             model = trainer.model.merge_and_unload()
             model.push_to_hub(config.hub_model_id)

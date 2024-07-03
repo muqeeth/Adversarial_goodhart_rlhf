@@ -144,6 +144,5 @@ if __name__ == "__main__":
         eval_dataset=eval_dataset,
         peft_config=get_peft_config(model_config),
     )
-    # trainer.train()
-    # trainer.save_model(reward_config.output_dir)
-    trainer.evaluate()
+    trainer.train()
+    trainer.save_model(reward_config.output_dir)

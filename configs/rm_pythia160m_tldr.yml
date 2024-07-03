@@ -1,17 +1,16 @@
-# output and name
-run_name: rm_pythia160m_tldr
-output_dir: rm_pythia160m_tldr
-hub_model_id: mnoukhov/pythia160m-rm-tldr
+run_name: rm_pythia160m_tldr6.9b
+output_dir: rm_pythia160m_tldr6.9b
+hub_model_id: mnoukhov/pythia160m-rm-tldr6.9b
 output_global_parent_dir: /home/toolkit/trl_summarize/results
 wandb_run_id: snow
 push_to_hub: True
 # rm
 model_name_or_path: mnoukhov/pythia160m-sft-tldr
-dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia1b
+dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b
 dataset_eval_split: validation
 learning_rate: 1.0e-5
 lr_scheduler_type: cosine
-bf16: True
+fp16: False
 gradient_accumulation_steps: 8
 per_device_train_batch_size: 8
 per_device_eval_batch_size: 8

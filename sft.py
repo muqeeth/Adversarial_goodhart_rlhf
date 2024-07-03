@@ -114,3 +114,10 @@ if __name__ == "__main__":
         if PartialState().is_main_process and model_config.use_peft:
             model = trainer.model.merge_and_unload()
             model.push_to_hub(config.hub_model_id)
+
+        try:
+            os.remove("output_dir")
+        except OSError:
+            pass
+
+        os.symlink(config.output_dir, "output_dir")

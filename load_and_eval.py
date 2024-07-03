@@ -170,7 +170,7 @@ if __name__ == "__main__":
         # column name should be generations_{step name}
         checkpoint_name = col_name.split("_")[1]
         generations[checkpoint_name] = dataset[col_name]
-        episodes[checkpoint_name] = trainer_states[checkpoint_name]["episode"]
+        episodes[checkpoint_name] = trainer_states[checkpoint_name].get("episode", None)
 
     if args.sanity_check:
         args.wandb_run_id = None

@@ -209,7 +209,7 @@ class PPOv2Trainer(Trainer):
             self.reward_model = self.reward_model.to(self.accelerator.device)
 
         if args.elastic_reset:
-            self.ema_model = AveragedModel(self.policy, multi_avg_fn=get_ema_multi_avg_fn(args.ema_decay))
+            self.ema_model = AveragedModel(self.model.policy, multi_avg_fn=get_ema_multi_avg_fn(args.ema_decay))
 
     def get_train_dataloader(self) -> DataLoader:
         return self.dataloader
@@ -497,19 +497,20 @@ class PPOv2Trainer(Trainer):
                         self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
                     if self.args.elastic_reset:
-                        self.ema_model.update_parameters(self.policy)
+                        self.ema_model.update_parameters(self.model.policy)
 
-                    if self.state.global_step % self.reset_steps == 0:
-                        ema_state_dict = self.ema_model.module.state_dict()
-                        if self.is_deepspeed_enabled:
-                            init_state_dict = self.ref_policy.module.state_dict()
-                        else:
-                            init_state_dict = self.ref_policy.state_dict()
-                        # self.accelerator.print([key for key in init_state_dict.keys()][:5])
-                        # self.accelerator.print([key for key in ema_state_dict.keys()][:5])
-                        # self.accelerator.print([key for key in self.policy.state_dict().keys()][:5])
-                        self.policy.load_state_dict(ema_state_dict)
-                        self.ema_model.module.load_state_dict(init_state_dict)
+                        if self.state.global_step % self.reset_steps == 0:
+                            ema_state_dict = self.ema_model.module.state_dict()
+                            if self.is_deepspeed_enabled:
+                                init_state_dict = self.ref_policy.module.state_dict()
+                            else:
+                                init_state_dict = self.ref_policy.state_dict()
+                            # self.accelerator.print([key for key in init_state_dict.keys()][:5])
+                            # self.accelerator.print([key for key in ema_state_dict.keys()][:5])
+                            # self.accelerator.print([key for key in self.policy.state_dict().keys()][:5])
+                            self.model.policy.load_state_dict(ema_state_dict)
+                            self.ema_model.module.load_state_dict(init_state_dict)
+
                     # del everything and empty cache
                     # fmt: off
                     del (

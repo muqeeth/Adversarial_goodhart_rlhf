@@ -221,6 +221,7 @@ else
 		--env WANDB_ENTITY=${WANDB_ENTITY} \
 		--env WANDB_PROJECT=${WANDB_PROJECT} \
 		--env GPU=${_GPU} \
+		--env FP=${FP} \
 		--workdir $(_WORKDIR) \
 		--image $(IMAGE):$(IMAGE_REVISION) \
 		--data $(ORG).$(USER).home:/home/toolkit \

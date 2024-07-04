@@ -76,7 +76,7 @@ if __name__ == "__main__":
     raw_datasets = load_dataset(args.dataset_name)
     if config.sanity_check:
         for key in raw_datasets:
-            raw_datasets[key] = raw_datasets[key].select(range(1024))
+            raw_datasets[key] = raw_datasets[key].select(range(2048))
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"

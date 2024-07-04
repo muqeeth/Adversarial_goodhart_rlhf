@@ -120,9 +120,10 @@ if __name__ == "__main__":
             trainer.push_to_hub()
         trainer.generate_completions()
 
-        try:
-            os.remove("output_dir")
-        except OSError:
-            pass
+        if trainer.accelerator.is_main_process:
+            try:
+                os.remove("output_dir")
+            except OSError:
+                pass
 
-        os.symlink(config.output_dir, "output_dir")
+            os.symlink(config.output_dir, "output_dir")

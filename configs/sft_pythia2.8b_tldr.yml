@@ -1,0 +1,26 @@
+# output and name
+run_name: sft_pythia2.8b_tldr
+output_dir: sft_pythia2.8b_tldr
+hub_model_id: pythia2.8b-sft-tldr
+output_global_parent_dir: /home/toolkit/trl_summarize/results
+wandb_run_id: snow
+push_to_hub: True
+# tldr stuff
+task_type: tldr
+model_name_or_path: EleutherAI/pythia-2.8b-deduped
+dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
+dataset_eval_split: validation
+report_to: "wandb"
+learning_rate: 1e-5
+fp16: True
+lr_scheduler_type: cosine
+gradient_accumulation_steps: 8
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 8
+num_train_epochs: 1
+max_seq_length: 580
+gradient_checkpointing: False
+evaluation_strategy: "steps"
+eval_steps: 0.2
+logging_steps: 100
+ddp_find_unused_parameters: False

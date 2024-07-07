@@ -220,7 +220,7 @@ else
 		--env WANDB_API_KEY=${WANDB_API_KEY} \
 		--env WANDB_ENTITY=${WANDB_ENTITY} \
 		--env WANDB_PROJECT=${WANDB_PROJECT} \
-		--env GPU=${_GPU} \
+		--env NPROC=${NPROC} \
 		--env FP=${FP} \
 		--workdir $(_WORKDIR) \
 		--image $(IMAGE):$(IMAGE_REVISION) \

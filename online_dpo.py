@@ -3,13 +3,16 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
+from accelerate import PartialState
 from datasets import load_dataset
+from peft import get_peft_model
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
 from trl import ModelConfig
+from trl.trainer.utils import get_peft_config
 
 from src.online_dpo_trainer import OnlineDPOConfig, OnlineDPOTrainer
 from src.utils import TRLParser
@@ -70,6 +73,11 @@ if __name__ == "__main__":
     reward_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1)
     ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
     policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
+
+    if model_config.use_peft:
+        peft_config = get_peft_config(model_config)
+        policy = get_peft_model(policy, peft_config)
+
     ################
     # Dataset
     ################
@@ -81,8 +89,8 @@ if __name__ == "__main__":
         config.report_to = ""
         config.save_strategy = "no"
         config.num_sample_generations = 0
-        config.total_episodes = 32
-        config.per_device_train_batch_size = 8
+        config.total_episodes = 1024
+        # config.per_device_train_batch_size = 8
         config.gradient_accumulation_steps = 1
 
     train_dataset = raw_datasets[args.dataset_train_split]
@@ -113,6 +121,9 @@ if __name__ == "__main__":
         trainer.save_model(config.output_dir)
         if config.push_to_hub:
             trainer.push_to_hub()
+            if PartialState().is_main_process and model_config.use_peft:
+                model = trainer.policy.merge_and_unload()
+                model.push_to_hub(config.hub_model_id)
         trainer.generate_completions()
 
         if trainer.accelerator.is_main_process:

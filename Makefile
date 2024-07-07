@@ -183,6 +183,11 @@ ifeq ($(DEEPSPEED), 1)
 	_CPU_MEM := $$(($(NPROC) * $(CPU_MEM)))
 	_GPU := $$(($(NPROC) * $(GPU)))
 endif
+ifneq ($(NPROC), 1)
+	_CPU := $$(($(NPROC) * $(CPU)))
+	_CPU_MEM := $$(($(NPROC) * $(CPU_MEM)))
+	_GPU := $$(($(NPROC) * $(GPU)))
+endif
 
 # _PYTHONPATH := $(_WORKDIR):$(_WORKDIR)/llmd2-core/src:$(_WORKDIR)/llmd2-finetune/src:$(_WORKDIR)/llmd2-integration/src
 _PYTHONPATH := 

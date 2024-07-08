@@ -1,6 +1,6 @@
 set -e 
 MODEL_PATH_ARG=$@
-if [[ "$MODEL_PATH" == *"pythia2.8b"* ]]; then
+if [[ "$MODEL_PATH_ARG" == *"pythia2.8b"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia2.8b-sft-tldr"
 else
     PEFT_ARG=""

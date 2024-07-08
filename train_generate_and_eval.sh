@@ -5,9 +5,9 @@ echo "Using output dir symlinked: $MODEL_PATH"
 OUTPUT_ARG="--model_name_or_path $MODEL_PATH"
 
 if [[ "$MODEL_PATH" == *"pythia2.8b"* ]]; then
-    PEFT_ARG = " --base_model_name mnoukhov/pythia2.8b-sft-tldr"
+    PEFT_ARG=" --base_model_name mnoukhov/pythia2.8b-sft-tldr"
 else
-    PEFT_ARG = ""
+    PEFT_ARG=""
 fi
 python generate_for_eval.py --config configs/generate_tldr.yml $OUTPUT_ARG $PEFT_ARG
 

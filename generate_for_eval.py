@@ -90,6 +90,7 @@ def generate(script_args):
             del model
             del merged
             model_name_or_path = model_save_path
+            script_args.tokenizer_name = script_args.base_model_name
 
         llm = LLM(
             model=model_name_or_path,

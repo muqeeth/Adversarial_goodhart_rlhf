@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import ray
 import torch
 from datasets import builder, load_dataset
 from peft import PeftModelForCausalLM
@@ -11,7 +12,9 @@ from transformers import (
     AutoModelForCausalLM,
 )
 from vllm import LLM, SamplingParams
-from vllm.distributed.parallel_state import destroy_model_parallel
+
+# from vllm.distributed.parallel_state import destroy_model_parallel
+from vllm.model_executor.parallel_utils.parallel_state import destroy_model_parallel
 
 from src.utils import TRLParser
 
@@ -98,7 +101,6 @@ def generate(script_args):
             dtype=script_args.gen_dtype,
             trust_remote_code=True,
             tensor_parallel_size=script_args.num_gpus,
-            # device="cuda:0",
         )
 
         generations = llm.generate(prompts, sampling_params)
@@ -115,7 +117,7 @@ def generate(script_args):
         del llm
         gc.collect()
         torch.cuda.empty_cache()
-        # torch.distributed.destroy_process_group()
+        ray.shutdown()
 
         trainer_state_path = os.path.join(model_name_or_path, "trainer_state.json")
         if os.path.exists(trainer_state_path):
@@ -156,7 +158,7 @@ if __name__ == "__main__":
         checkpoint_subfolders = [
             path for path in os.listdir(generate_args.model_name_or_path) if path.startswith("checkpoint")
         ]
-        generate_args.model_paths = [checkpoint_subfolders[-1]]
+        generate_args.model_paths = checkpoint_subfolders[:2]
         generate_args.split = generate_args.split + "[:100]"
 
     print("GENERATING")

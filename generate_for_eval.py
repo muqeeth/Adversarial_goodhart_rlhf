@@ -80,6 +80,7 @@ def generate(script_args):
         print(f"generating {model_name_or_path}")
         model_or_checkpoint_name = os.path.basename(model_name_or_path)
 
+        merged_model_path = None
         if script_args.base_model_name is not None:
             # peft model that needs to be merged
             base_model = AutoModelForCausalLM.from_pretrained(
@@ -88,15 +89,14 @@ def generate(script_args):
             # merge the model and save
             model = PeftModelForCausalLM.from_pretrained(base_model, model_name_or_path, device_map="cpu")
             merged = model.merge_and_unload()
-            model_save_path = os.path.join(model_name_or_path, "_merged")
-            merged.save_pretrained(model_save_path)
+            merged_model_path = os.path.join(model_name_or_path, "_merged")
+            merged.save_pretrained(merged_model_path)
             del model
             del merged
-            model_name_or_path = model_save_path
             script_args.tokenizer_name = script_args.base_model_name
 
         llm = LLM(
-            model=model_name_or_path,
+            model=model_name_or_path if merged_model_path is None else merged_model_path,
             tokenizer=script_args.tokenizer_name,
             dtype=script_args.gen_dtype,
             trust_remote_code=True,

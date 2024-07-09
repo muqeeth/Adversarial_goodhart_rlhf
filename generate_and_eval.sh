@@ -2,6 +2,10 @@ set -e
 MODEL_PATH_ARG=$@
 if [[ "$MODEL_PATH_ARG" == *"pythia2.8b"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia2.8b-sft-tldr"
+elif [[ "$MODEL_PATH_ARG" == *"pythia1b"* ]] && [[ "$MODEL_PATH_ARG" == *"peft"* ]]; then
+    PEFT_ARG=" --base_model_name mnoukhov/pythia1b-sft-tldr"
+elif [[ "$MODEL_PATH_ARG" == *"pythia410m"* ]] && [[ "$MODEL_PATH_ARG" == *"peft"* ]]; then
+    PEFT_ARG=" --base_model_name mnoukhov/pythia410m-sft-tldr"
 else
     PEFT_ARG=""
 fi

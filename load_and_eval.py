@@ -142,7 +142,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
                     "gold/reward": mean_reward,
                     "gold/ppl": mean_ppl,
                     "gold/samples": sample_generations,
-                    # "train/global_step": step,
+                    "train/global_step": step,
                     "train/episode": episode,
                 },
             )

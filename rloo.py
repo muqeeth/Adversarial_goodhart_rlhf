@@ -13,7 +13,7 @@ from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
-from src.utils import TRLParser
+from src.utils import TRLParser, WandbLogModelConfig
 
 
 @dataclass
@@ -111,6 +111,7 @@ if __name__ == "__main__":
         reward_model=reward_model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        callbacks=[WandbLogModelConfig(model_config)],
     )
     trainer.train()
 

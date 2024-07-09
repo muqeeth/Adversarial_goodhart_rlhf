@@ -12,7 +12,7 @@ from transformers import (
 from trl import ModelConfig
 
 from src.ppov2_trainer import ElasticPPOv2Config, PPOv2Trainer
-from src.utils import TRLParser
+from src.utils import TRLParser, WandbLogModelConfig
 
 
 @dataclass
@@ -56,6 +56,8 @@ if __name__ == "__main__":
         run_id = os.path.basename(os.getcwd())
         output_dir_basename = os.path.basename(config.output_dir)
         os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
+    else:
+        os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 
     ################
     # Model & Tokenizer
@@ -76,13 +78,14 @@ if __name__ == "__main__":
     raw_datasets = load_dataset(args.dataset_name)
     if config.sanity_check:
         for key in raw_datasets:
-            raw_datasets[key] = raw_datasets[key].select(range(1024))
+            raw_datasets[key] = raw_datasets[key].select(range(8))
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"
-        config.total_episodes = 1024
-        config.per_device_batch_size = 8
-        config.gradient_accumulation_steps = 1
+        config.total_episodes = 256
+        config.per_device_train_batch_size = 2
+        config.gradient_accumulation_steps = 4
+        config.local_rollout_forward_batch_size = 8
         config.num_sample_generations = 0
 
     train_dataset = raw_datasets[args.dataset_train_split]
@@ -107,6 +110,7 @@ if __name__ == "__main__":
         value_model=value_model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        callbacks=[WandbLogModelConfig(model_config)],
     )
     trainer.train()
 

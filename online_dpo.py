@@ -15,7 +15,7 @@ from trl import ModelConfig
 from trl.trainer.utils import get_peft_config
 
 from src.online_dpo_trainer import OnlineDPOConfig, OnlineDPOTrainer
-from src.utils import TRLParser
+from src.utils import TRLParser, WandbLogModelConfig
 
 
 @dataclass
@@ -86,10 +86,10 @@ if __name__ == "__main__":
         for key in raw_datasets:
             raw_datasets[key] = raw_datasets[key].select(range(2048))
         config.push_to_hub = False
-        config.report_to = ""
+        # config.report_to = ""
         config.save_strategy = "no"
         config.num_sample_generations = 0
-        config.total_episodes = 1024
+        config.total_episodes = 512
         # config.per_device_train_batch_size = 8
         config.gradient_accumulation_steps = 1
 
@@ -114,6 +114,7 @@ if __name__ == "__main__":
         reward_model=reward_model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        callbacks=[WandbLogModelConfig(model_config)],
     )
     trainer.train()
 

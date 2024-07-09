@@ -6,7 +6,9 @@ from dataclasses import dataclass
 
 import yaml
 from accelerate.state import AcceleratorState
-from transformers import HfArgumentParser, TrainerState
+from transformers import HfArgumentParser, TrainerCallback, TrainerState
+
+import wandb
 
 
 logger = logging.getLogger(__name__)
@@ -165,3 +167,21 @@ def prepare_deepspeed(model, per_device_train_batch_size, fp16=False, bf16=False
     model, *_ = deepspeed.initialize(model=model, config=config_kwargs)
     model.eval()
     return model
+
+
+def copy_to(source_model, target_model):
+    """Copy params from model to target_model"""
+    for (src_name, src_param), (tgt_name, tgt_param) in zip(
+        source_model.named_parameters(), target_model.named_parameters()
+    ):
+        assert src_name == tgt_name
+        tgt_param.data.copy_(src_param.data)
+
+
+class WandbLogModelConfig(TrainerCallback):
+    def __init__(self, model_config):
+        self.model_config = model_config
+
+    def on_train_begin(self, args, state, control, model=None, **kwargs):
+        if args.report_to != "no":
+            wandb.config.update(self.model_config.to_dict(), allow_val_change=True)

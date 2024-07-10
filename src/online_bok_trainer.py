@@ -3,7 +3,6 @@ import math
 import os
 import time
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -40,11 +39,6 @@ from trl.trainer.utils import (
 )
 
 from src.utils import OnlineTrainerState, prepare_deepspeed
-
-
-@dataclass
-class OnlineBoKConfig(RLOOConfig):
-    save_generations: bool = False
 
 
 class OnlineBoKTrainer(RLOOTrainer):

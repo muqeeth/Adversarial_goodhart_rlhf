@@ -62,6 +62,8 @@ if __name__ == "__main__":
         run_id = os.path.basename(os.getcwd())
         output_dir_basename = os.path.basename(config.output_dir)
         os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
+    else:
+        os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 
     ################
     # Model & Tokenizer

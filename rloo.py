@@ -12,6 +12,7 @@ from transformers import (
 from trl import ModelConfig
 from trl.trainer.rloo_trainer import RLOOConfig
 
+from src.online_bok_trainer import OnlineBoKTrainer
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
 from src.utils import TRLParser, WandbLogModelConfig
 
@@ -27,6 +28,7 @@ class ScriptArguments:
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     config: str = field(default=None, metadata={"help": "Path to the optional config file"})
     vllm: bool = field(default=False)
+    bok: bool = field(default=False)
     wandb_run_id: Optional[str] = field(default=None)
 
 
@@ -60,6 +62,8 @@ if __name__ == "__main__":
         run_id = os.path.basename(os.getcwd())
         output_dir_basename = os.path.basename(config.output_dir)
         os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
+    else:
+        os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 
     ################
     # Model & Tokenizer
@@ -98,12 +102,12 @@ if __name__ == "__main__":
     # Training
     ################
 
-    # if args.vllm:
-    #     TrainerCls = RLOOTrainerVLLM
-    # else:
-    #     TrainerCls = RLOOTrainer
+    if args.bok:
+        TrainerCls = OnlineBoKTrainer
+    else:
+        TrainerCls = RLOOTrainer
 
-    trainer = RLOOTrainer(
+    trainer = TrainerCls(
         config=config,
         tokenizer=tokenizer,
         policy=policy,

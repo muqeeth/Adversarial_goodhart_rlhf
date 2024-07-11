@@ -170,7 +170,12 @@ if __name__ == "__main__":
         # column name should be generations_{step name}
         checkpoint_name = col_name.split("_")[1]
         generations[checkpoint_name] = dataset[col_name]
-        episodes[checkpoint_name] = trainer_states[checkpoint_name].get("episode", None)
+        if "episode" in trainer_states[checkpoint_name]:
+            eps = trainer_states[checkpoint_name]["episode"]
+        else:
+            # assume offline dpo, which uses a pref dataset of 92858, although this is slightly off in practice
+            eps = round(trainer_states[checkpoint_name]["epoch"] * 92858)
+        episodes[checkpoint_name] = eps
 
     if args.sanity_check:
         args.wandb_run_id = None

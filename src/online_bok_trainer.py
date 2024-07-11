@@ -122,10 +122,6 @@ class OnlineBoKTrainer(RLOOTrainer):
         #     "`local_batch_size` must be a multiple of rloo_k",
         # )  # RLOO logic: needed because RLOO repeats the same prompt args.rloo_k times
 
-        ### DPO stuff
-        self.beta = config.beta
-        self.loss_type = config.loss_type
-
         #########
         # setup model, optimizer, and others
         #########
@@ -156,6 +152,7 @@ class OnlineBoKTrainer(RLOOTrainer):
         self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
         self.control = TrainerControl()
 
+        self.args.save_generations = False
         self.current_flos = 0
         self.hp_search_backend = None
         self.is_deepspeed_enabled = getattr(self.accelerator.state, "deepspeed_plugin", None) is not None
@@ -428,17 +425,20 @@ class OnlineBoKTrainer(RLOOTrainer):
                             ## chosen
                             chosen_mb_inds = chosen_indices[micro_batch_inds]
                             chosen_responses = responses[chosen_mb_inds]
-
+                            chosen_query_responses = query_responses[chosen_mb_inds]
                             ## rejected
                             # rejected_mb_inds = rejected_indices[micro_batch_inds]
                             # rejected_responses = responses[rejected_mb_inds]
 
                             # concat_mb_inds = torch.cat((chosen_mb_inds, rejected_mb_inds), dim=0)
                             # concat_query_responses = query_responses[concat_mb_inds]
-
-                            forward_output = forward(model, chosen_responses, tokenizer.pad_token_id)
-                            chosen_logits = forward_output.logits
+                            # concat_output = forward(model, concat_query_responses, tokenizer.pad_token_id)
+                            # num_examples = chosen_mb_inds.shape[0]
+                            # chosen_logits = concat_output.logits[:num_examples]
                             # rejected_logits = concat_output.logits[num_examples:]
+
+                            forward_output = forward(model, chosen_query_responses, tokenizer.pad_token_id)
+                            chosen_logits = forward_output.logits
 
                             # chosen
                             chosen_logits = chosen_logits[:, context_length - 1 : -1]

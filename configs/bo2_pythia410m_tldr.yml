@@ -6,6 +6,8 @@ dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_
 dataset_test_split: validation
 max_length: 512
 fp16: True
+##
+bok: True
 ## ppo stuff
 total_episodes: 128000
 response_length: 53

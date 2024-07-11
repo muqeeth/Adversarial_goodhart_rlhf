@@ -183,5 +183,6 @@ class WandbLogModelConfig(TrainerCallback):
         self.model_config = model_config
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
-        if args.report_to != "no" and state.is_world_process_zero:
+        # TODO this is wrong report_to
+        if args.report_to and state.is_world_process_zero:
             wandb.config.update(self.model_config.to_dict(), allow_val_change=True)

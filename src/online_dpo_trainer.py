@@ -285,12 +285,6 @@ class OnlineDPOTrainer(RLOOTrainer):
         stats_shape = (args.num_ppo_epochs, args.num_mini_batches, args.gradient_accumulation_steps)
         loss_stats = torch.zeros(stats_shape, device=device)
 
-        approxkl_stats = torch.zeros(stats_shape, device=device)
-        pg_clipfrac_stats = torch.zeros(stats_shape, device=device)
-        vf_loss_stats = torch.zeros(stats_shape, device=device)
-        vf_clipfrac_stats = torch.zeros(stats_shape, device=device)
-        entropy_stats = torch.zeros(stats_shape, device=device)
-        ratio_stats = torch.zeros(stats_shape, device=device)
         model.train()
         self.state.max_steps = args.num_updates
         self.state.num_train_epochs = args.total_episodes / self.train_dataset_len

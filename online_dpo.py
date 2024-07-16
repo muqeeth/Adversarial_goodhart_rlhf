@@ -86,10 +86,10 @@ if __name__ == "__main__":
         for key in raw_datasets:
             raw_datasets[key] = raw_datasets[key].select(range(2048))
         config.push_to_hub = False
-        # config.report_to = ""
+        config.report_to = ""
         config.save_strategy = "no"
         config.num_sample_generations = 0
-        config.total_episodes = 512
+        # config.total_episodes = 512
         # config.per_device_train_batch_size = 8
         config.gradient_accumulation_steps = 1
 

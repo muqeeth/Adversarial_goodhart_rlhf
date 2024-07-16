@@ -311,7 +311,7 @@ class OnlineDPOTrainer(RLOOTrainer):
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "batch_num": []}
 
-        for batch_num in range(1, args.num_batches + 1):
+        for batch_num in range(1, self.num_batches + 1):
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)

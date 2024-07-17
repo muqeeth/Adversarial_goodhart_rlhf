@@ -41,7 +41,7 @@ from trl.trainer.utils import (
     truncate_response,
 )
 
-from src.utils import INVALID_LOGPROB, OnlineTrainerState, prepare_deepspeed
+from src.utils import INVALID_LOGPROB, OnlineTrainerState, copy_to, prepare_deepspeed
 
 
 @dataclass
@@ -128,13 +128,18 @@ class PPOv2Trainer(Trainer):
             ), f"Per-rank minibatch size {args.local_mini_batch_size} is insufficient for whitening"
         # `per_rank_rollout_batch_size` is our `args.local_batch_size`
         # `per_rank_minibatch_size` is our `args.local_mini_batch_size`
-        args.num_updates = args.total_episodes // args.batch_size
+        self.num_batches = exact_div(
+            args.total_episodes,
+            args.batch_size,
+            f" total_episodes {args.total_episodes} should be divisible by batch_size {args.batch_size} ",
+        )
+        args.num_updates = self.num_batches * args.num_mini_batches
         # time_tensor = torch.tensor(int(time.time()), device=accelerator.device)
         # time_int = broadcast(time_tensor, 0).item()  # avoid different timestamps across processes
         # args.run_name = f"{args.exp_name}__{args.seed}__{time_int}"
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
-            self.sample_generations_freq = max(1, args.num_updates // args.num_sample_generations)
+            self.sample_generations_freq = max(1, args.num_batches // args.num_sample_generations)
 
         #########
         # setup model, optimizer, and others
@@ -267,7 +272,7 @@ class PPOv2Trainer(Trainer):
         entropy_stats = torch.zeros(stats_shape, device=device)
         ratio_stats = torch.zeros(stats_shape, device=device)
         model.train()
-        self.state.max_steps = args.num_updates * args.num_mini_batches
+        self.state.max_steps = args.num_updates
         self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()
@@ -290,12 +295,15 @@ class PPOv2Trainer(Trainer):
                 self.state.save_steps = args.save_steps
 
         if args.elastic_reset:
-            self.reset_steps = math.ceil(self.state.max_steps * args.reset_steps)
+            if args.reset_steps < 1:
+                self.reset_steps = math.ceil(self.state.max_steps * args.reset_steps)
+            else:
+                self.reset_steps = args.reset_steps
         else:
             self.reset_steps = None
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
-        for update in range(1, args.num_updates + 1):
+        for update in range(1, args.num_batches + 1):
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
@@ -497,19 +505,37 @@ class PPOv2Trainer(Trainer):
                         self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
                     if self.args.elastic_reset:
-                        self.ema_model.update_parameters(self.model.policy)
+                        self.ema_model.update_parameters(model.policy)
+                        print("policy")
+                        self.accelerator.print(model.policy.embed_out.weight)
+                        print("ema")
+                        self.accelerator.print(self.ema_model.module.embed_out.weight)
 
                         if self.state.global_step % self.reset_steps == 0:
-                            ema_state_dict = self.ema_model.module.state_dict()
+                            self.accelerator.print("RESET")
                             if self.is_deepspeed_enabled:
-                                init_state_dict = self.ref_policy.module.state_dict()
+                                policy_params = model.module.policy
+                                ema_params = self.ema_model.module
+                                ref_params = ref_policy.module
                             else:
-                                init_state_dict = self.ref_policy.state_dict()
-                            # self.accelerator.print([key for key in init_state_dict.keys()][:5])
-                            # self.accelerator.print([key for key in ema_state_dict.keys()][:5])
-                            # self.accelerator.print([key for key in self.policy.state_dict().keys()][:5])
-                            self.model.policy.load_state_dict(ema_state_dict)
-                            self.ema_model.module.load_state_dict(init_state_dict)
+                                policy_params = model.policy
+                                ema_params = self.ema_model.module
+                                ref_params = ref_policy
+                            #     init_state_dict = self.ref_policy.module.state_dict()
+                            # else:
+                            #     init_state_dict = self.ref_policy.state_dict()
+                            # could be wrong without deepspeed?
+                            # self.accelerator.print(
+                            #     [(key, p) for key, p in self.ema_model.module.named_parameters()][:1]
+                            # )
+                            # self.accelerator.print([key for key, p in self.ref_policy.module.named_parameters()][:5])
+                            # self.accelerator.print([(key, p) for key, p in model.module.policy.named_parameters()][:5])
+                            copy_to(ema_params, policy_params)
+                            # copy_to(ref_params, ema_params)
+                            # copy_to(ref_params, policy_params)
+                            # model, optimizer = accelerator.prepare(model, optimizer)
+                            # self.model.policy.load_state_dict(ema_state_dict)
+                            # self.ema_model.module.load_state_dict(init_state_dict)
 
                     # del everything and empty cache
                     # fmt: off

@@ -172,9 +172,12 @@ if __name__ == "__main__":
         generations[checkpoint_name] = dataset[col_name]
         if "episode" in trainer_states[checkpoint_name]:
             eps = trainer_states[checkpoint_name]["episode"]
-        else:
+        elif "dpo" in args.model_name_or_path:
             # assume offline dpo, which uses a pref dataset of 92858, although this is slightly off in practice
             eps = round(trainer_states[checkpoint_name]["epoch"] * 92858)
+        else:
+            # for sft and others
+            eps = 0
         episodes[checkpoint_name] = eps
 
     if args.sanity_check:

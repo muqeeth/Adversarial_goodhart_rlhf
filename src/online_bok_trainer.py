@@ -135,7 +135,7 @@ class OnlineBoKTrainer(RLOOTrainer):
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
         self.model = policy
-        self.create_optimizer_and_scheduler(num_training_steps=args.num_updates)
+        self.create_optimizer_and_scheduler(num_training_steps=args.num_batches)
 
         #########
         ### trainer specifics

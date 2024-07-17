@@ -13,7 +13,7 @@ reset_steps: 0.34
 kl_coef: 0.001
 ## ppo stuff
 num_ppo_epochs: 4
-total_episodes: 128000
+total_episodes: 131072
 response_length: 53
 num_ppo_epochs: 1
 num_mini_batches: 1 

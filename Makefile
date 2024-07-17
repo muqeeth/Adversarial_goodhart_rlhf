@@ -227,6 +227,7 @@ else
 		--env WANDB_ENTITY=${WANDB_ENTITY} \
 		--env WANDB_PROJECT=${WANDB_PROJECT} \
 		--env WANDB_TAGS=${SHORT_REVISION} \
+		--env WANDB_DIR=/tmp \
 		--env NPROC=${NPROC} \
 		--env FP=${FP} \
 		--workdir $(_WORKDIR) \

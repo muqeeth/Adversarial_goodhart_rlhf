@@ -109,10 +109,15 @@ class OnlineBoKTrainer(RLOOTrainer):
             ), f"Per-rank minibatch size {args.local_mini_batch_size} is insufficient for whitening"
         # `per_rank_rollout_batch_size` is our `args.local_batch_size`
         # `per_rank_minibatch_size` is our `args.local_mini_batch_size`
-        args.num_updates = args.total_episodes // args.batch_size
+        self.num_batches = exact_div(
+            args.total_episodes,
+            args.batch_size,
+            f" total_episodes {args.total_episodes} should be divisible by batch_size {args.batch_size} ",
+        )
+        args.num_updates = self.num_batches * args.num_mini_batches
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
-            self.sample_generations_freq = max(1, args.num_updates // args.num_sample_generations)
+            self.sample_generations_freq = max(1, self.num_batches // args.num_sample_generations)
 
         assert args.rloo_k == 2, "currently only support 2"
         self.local_dataloader_batch_size = args.local_batch_size
@@ -248,7 +253,7 @@ class OnlineBoKTrainer(RLOOTrainer):
         loss_stats = torch.zeros(stats_shape, device=device)
 
         model.train()
-        self.state.max_steps = args.num_updates * args.num_mini_batches
+        self.state.max_steps = args.num_updates
         self.state.num_train_epochs = args.total_episodes / self.train_dataset_len
         self.state.is_local_process_zero = self.is_local_process_zero()
         self.state.is_world_process_zero = self.is_world_process_zero()
@@ -273,7 +278,7 @@ class OnlineBoKTrainer(RLOOTrainer):
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "update": []}
 
-        for update in range(1, args.num_updates + 1):
+        for update in range(1, self.num_batches + 1):
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)

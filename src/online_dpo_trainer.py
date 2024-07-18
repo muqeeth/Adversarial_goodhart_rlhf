@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import gather_object
 from datasets import Dataset
+from peft import PeftModel
 from torch.utils.data import DataLoader
 from transformers import (
     DataCollatorWithPadding,
@@ -113,6 +114,7 @@ class OnlineDPOTrainer(RLOOTrainer):
         self.policy.generation_config.pad_token_id = None  # generate tokens without truncation / padding
 
         self.ref_policy = ref_policy
+        assert ref_policy is not None or isinstance(policy, PeftModel)
         self.reward_model = reward_model
         self.train_dataset = train_dataset
         self.train_dataset_len = len(train_dataset)
@@ -174,8 +176,12 @@ class OnlineDPOTrainer(RLOOTrainer):
         #########
         # setup model, optimizer, and others
         #########
-        for module in [policy, ref_policy, reward_model]:
+        for module in [policy, reward_model]:
             disable_dropout_in_model(module)
+
+        if ref_policy is not None:
+            disable_dropout_in_model(ref_policy)
+
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
         self.model = policy
@@ -242,13 +248,15 @@ class OnlineDPOTrainer(RLOOTrainer):
             self.reward_model = prepare_deepspeed(
                 self.reward_model, args.per_device_train_batch_size, config.fp16, config.bf16
             )
-            self.ref_policy = prepare_deepspeed(
-                self.ref_policy, args.per_device_train_batch_size, config.fp16, config.bf16
-            )
             self.deepspeed = self.model
+            if self.ref_policy is not None:
+                self.ref_policy = prepare_deepspeed(
+                    self.ref_policy, args.per_device_train_batch_size, config.fp16, config.bf16
+                )
         else:
-            self.ref_policy = self.ref_policy.to(self.accelerator.device)
             self.reward_model = self.reward_model.to(self.accelerator.device)
+            if self.ref_policy is not None:
+                self.ref_policy = self.ref_policy.to(self.accelerator.device)
 
         self.ref_model = self.ref_policy
 
@@ -341,7 +349,11 @@ class OnlineDPOTrainer(RLOOTrainer):
                         del logits, all_logprob
                         torch.cuda.empty_cache()
 
-                        ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
+                        if ref_policy is not None:
+                            ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
+                        else:
+                            with self.accelerator.unwrap_model(model).disable_adapter():
+                                ref_output = forward(model, query_response, tokenizer.pad_token_id)
                         ref_logits = ref_output.logits[:, context_length - 1 : -1]
                         ref_logits /= args.temperature + 1e-7
                         ref_all_logprob = F.log_softmax(ref_logits, dim=-1)

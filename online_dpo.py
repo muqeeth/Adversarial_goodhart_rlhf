@@ -71,12 +71,14 @@ if __name__ == "__main__":
     )
 
     reward_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1)
-    ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
     policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
 
     if model_config.use_peft:
         peft_config = get_peft_config(model_config)
         policy = get_peft_model(policy, peft_config)
+        ref_policy = None
+    else:
+        ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
 
     ################
     # Dataset

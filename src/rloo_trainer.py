@@ -139,7 +139,7 @@ class MyRLOOTrainer(Trainer):
         if args.stop_token and args.stop_token == "eos":
             args.stop_token_id = tokenizer.eos_token_id
         self.model = policy
-        self.create_optimizer_and_scheduler(num_training_steps=args.num_batches)
+        self.create_optimizer_and_scheduler(num_training_steps=self.num_batches)
 
         #########
         ### trainer specifics

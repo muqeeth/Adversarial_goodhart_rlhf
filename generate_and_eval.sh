@@ -22,5 +22,16 @@ else
     echo "output path doesn't contain one of model names"
     exit 1
 fi
-echo $REF_ARG
-accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=$NPROC load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG
+
+GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
+if [[ "$GPU_MEMORY" == "16"* ]]; then
+    # lazy check if we're using 16gb gpus
+    BATCH_SIZE_ARG="--eval_batch_size 4"
+else
+    BATCH_SIZE_ARG=""
+fi
+
+echo $BATCH_SIZE_ARG
+
+accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=$NPROC \
+    load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG $BATCH_SIZE_ARG

@@ -2,9 +2,9 @@ set -e
 MODEL_PATH_ARG=$@
 if [[ "$MODEL_PATH_ARG" == *"pythia2.8b"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia2.8b-sft-tldr"
-elif [[ "$MODEL_PATH_ARG" == *"pythia1b"* ]] && [[ "$MODEL_PATH_ARG" == *"peft"* ]]; then
+elif [[ "$MODEL_PATH_ARG" == *"pythia1b"* ]] && [[ "$MODEL_PATH_ARG" == *"lora"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia1b-sft-tldr"
-elif [[ "$MODEL_PATH_ARG" == *"pythia410m"* ]] && [[ "$MODEL_PATH_ARG" == *"peft"* ]]; then
+elif [[ "$MODEL_PATH_ARG" == *"pythia410m"* ]] && [[ "$MODEL_PATH_ARG" == *"lora"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia410m-sft-tldr"
 else
     PEFT_ARG=""
@@ -34,4 +34,4 @@ fi
 echo $BATCH_SIZE_ARG
 
 accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=$NPROC \
-    load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG $BATCH_SIZE_ARG
+    load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG

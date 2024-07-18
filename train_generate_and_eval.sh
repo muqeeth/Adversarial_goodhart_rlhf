@@ -6,9 +6,9 @@ MODEL_PATH_ARG="--model_name_or_path $MODEL_PATH"
 
 if [[ "$MODEL_PATH" == *"pythia2.8b"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia2.8b-sft-tldr"
-elif [[ "$MODEL_PATH" == *"pythia1b"* ]] && [[ "$MODEL_PATH" == *"peft"* ]]; then
+elif [[ "$MODEL_PATH" == *"pythia1b"* ]] && [[ "$MODEL_PATH" == *"lora"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia1b-sft-tldr"
-elif [[ "$MODEL_PATH" == *"pythia410m"* ]] && [[ "$MODEL_PATH" == *"peft"* ]]; then
+elif [[ "$MODEL_PATH" == *"pythia410m"* ]] && [[ "$MODEL_PATH" == *"lora"* ]]; then
     PEFT_ARG=" --base_model_name mnoukhov/pythia410m-sft-tldr"
 else
     PEFT_ARG=""

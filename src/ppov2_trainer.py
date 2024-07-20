@@ -139,7 +139,7 @@ class PPOv2Trainer(Trainer):
         # args.run_name = f"{args.exp_name}__{args.seed}__{time_int}"
         self.local_seed = args.seed + accelerator.process_index * 100003  # Prime
         if args.num_sample_generations > 0:
-            self.sample_generations_freq = max(1, args.num_batches // args.num_sample_generations)
+            self.sample_generations_freq = max(1, self.num_batches // args.num_sample_generations)
 
         #########
         # setup model, optimizer, and others
@@ -303,7 +303,7 @@ class PPOv2Trainer(Trainer):
             self.reset_steps = None
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
-        for update in range(1, args.num_batches + 1):
+        for update in range(1, self.num_batches + 1):
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)

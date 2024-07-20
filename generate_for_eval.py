@@ -101,6 +101,7 @@ def generate(script_args):
             dtype=script_args.gen_dtype,
             trust_remote_code=True,
             tensor_parallel_size=script_args.num_gpus,
+            gpu_memory_utilization=0.8,
         )
 
         generations = llm.generate(prompts, sampling_params)

@@ -13,7 +13,15 @@ elif [[ "$MODEL_PATH" == *"pythia410m"* ]] && [[ "$MODEL_PATH" == *"lora"* ]]; t
 else
     PEFT_ARG=""
 fi
-python generate_for_eval.py --config configs/generate_tldr.yml $MODEL_PATH_ARG $PEFT_ARG
+
+GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
+if [[ "$GPU_MEMORY" == "16"* ]]; then
+    # lazy check if we're using 16gb gpus
+    BATCH_SIZE_ARG="--generate_batch_size 8"
+else
+    BATCH_SIZE_ARG=""
+fi
+python generate_for_eval.py --config configs/generate_tldr.yml $MODEL_PATH_ARG $PEFT_ARG $BATCH_SIZE_ARG
 
 if [[ "$MODEL_PATH" == *"pythia410m"* ]]; then
     REF_ARG=" --ref_model_name mnoukhov/pythia410m-sft-tldr"
@@ -26,7 +34,6 @@ else
     exit 1
 fi
 
-GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
 if [[ "$GPU_MEMORY" == "16"* ]]; then
     # lazy check if we're using 16gb gpus
     BATCH_SIZE_ARG="--eval_batch_size 4"

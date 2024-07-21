@@ -204,10 +204,10 @@ class PPOv2Trainer(Trainer):
 
         if self.is_deepspeed_enabled:
             self.reward_model = prepare_deepspeed(
-                self.reward_model, args.per_device_train_batch_size, args.bf16, args.fp16
+                self.reward_model, args.per_device_train_batch_size, args.fp16, args.bf16
             )
             self.ref_policy = prepare_deepspeed(
-                self.ref_policy, args.per_device_train_batch_size, args.bf16, args.fp16
+                self.ref_policy, args.per_device_train_batch_size, args.fp16, args.bf16
             )
         else:
             self.ref_policy = self.ref_policy.to(self.accelerator.device)

@@ -7,7 +7,7 @@ dataset_test_split: validation
 max_length: 512
 fp16: True
 ## ppo stuff
-num_ppo_epochs: 4
+num_ppo_epochs: 1
 total_episodes: 131072
 response_length: 53
 num_ppo_epochs: 1

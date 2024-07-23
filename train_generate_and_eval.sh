@@ -1,5 +1,5 @@
 set -e 
-accelerate launch --config_file configs/deepspeed_zero2.yaml --mixed_precision=${FP:=fp16} --num_processes $NPROC $@
+accelerate launch --config_file configs/deepspeed_zero2.yaml --mixed_precision=${FP:=fp16} --num_processes ${NPROC:=1} $@
 MODEL_PATH=$(readlink -f output_dir)
 echo "Using output dir symlinked: $MODEL_PATH"
 MODEL_PATH_ARG="--model_name_or_path $MODEL_PATH"
@@ -41,5 +41,5 @@ else
     BATCH_SIZE_ARG=""
 fi
 
-accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=$NPROC \
+accelerate launch --multi_gpu --mixed_precision=${FP:=fp16} --num_processes=${NPROC:=1} \
     load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG $BATCH_SIZE_ARG

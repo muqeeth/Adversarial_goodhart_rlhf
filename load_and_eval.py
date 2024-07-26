@@ -10,6 +10,7 @@ from accelerate.utils import gather_object
 from datasets import builder, load_from_disk
 from tqdm.auto import tqdm
 from transformers import pipeline
+from transformers.pipelines.pt_utils import KeyDataset
 
 import src.perplexity
 import wandb
@@ -161,7 +162,7 @@ if __name__ == "__main__":
         trainer_states = json.load(f)
 
     prompts = dataset["query"]
-    reference = dataset["query_reference_response"]
+    reference = KeyDataset(dataset, "query_reference_response")
 
     generations_cols = [name for name in dataset.column_names if name.startswith("generation")]
     generations = {}
@@ -169,7 +170,7 @@ if __name__ == "__main__":
     for col_name in generations_cols:
         # column name should be generations_{step name}
         checkpoint_name = col_name.split("_")[1]
-        generations[checkpoint_name] = dataset[col_name]
+        generations[checkpoint_name] = KeyDataset(dataset, col_name)
         if "episode" in trainer_states[checkpoint_name]:
             eps = trainer_states[checkpoint_name]["episode"]
         elif "dpo" in args.model_name_or_path:
@@ -182,8 +183,9 @@ if __name__ == "__main__":
 
     if args.sanity_check:
         args.wandb_run_id = None
-        generations = {checkpoint_name: dataset[col_name][:100]}
-        reference = reference[:100]
+        generations = {checkpoint_name: generations[checkpoint_name]}
+        generations[checkpoint_name].dataset = generations[checkpoint_name].dataset.select(range(100))
+        reference.dataset = reference.dataset.select(range(500))
 
     if args.wandb_run_id == "snow":
         # remove extra / at end

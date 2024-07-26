@@ -19,7 +19,8 @@ else
     BATCH_SIZE_ARG=""
 fi
 
-TOKENIZERS_PARALLELISM=false /home/toolkit/.conda/envs/vllm0.4.0/bin/python generate_for_eval.py --config configs/generate_tldr.yml $MODEL_PATH_ARG $PEFT_ARG $BATCH_SIZE_ARG
+# TOKENIZERS_PARALLELISM=false /home/toolkit/.conda/envs/vllm0.4.0/bin/python generate_for_eval.py --config configs/generate_tldr.yml $MODEL_PATH_ARG $PEFT_ARG $BATCH_SIZE_ARG
+TOKENIZERS_PARALLELISM=false python generate_for_eval.py --config configs/generate_tldr.yml $MODEL_PATH_ARG $PEFT_ARG $BATCH_SIZE_ARG
 
 if [[ "$MODEL_PATH_ARG" == *"pythia410m"* ]]; then
     REF_ARG=" --ref_model_name mnoukhov/pythia410m-sft-tldr"

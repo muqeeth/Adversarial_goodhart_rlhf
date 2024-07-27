@@ -6,7 +6,7 @@ from typing import Optional
 import numpy as np
 import torch
 from accelerate import PartialState
-from accelerate.utils import gather_object
+from accelerate.utils import gather, gather_object
 from datasets import builder, load_from_disk
 from tqdm.auto import tqdm
 from transformers import pipeline
@@ -74,8 +74,8 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
                 out = [out]
             ref_rewards.extend([o["score"] for o in out])
 
-    ref_rewards = gather_object(ref_rewards)
-    ref_rewards = np.array(ref_rewards)
+    ref_rewards = gather(torch.tensor(ref_rewards).to(state.device))
+    ref_rewards = ref_rewards.cpu().numpy()
 
     step = 0
     for step_str, all_query_response in all_generations.items():
@@ -101,11 +101,11 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
             ):
                 gen_ppls += [r["ppl"] for r in out]
 
-        gen_rewards = gather_object(gen_rewards)
-        gen_rewards = np.array(gen_rewards)
+        gen_rewards = gather(torch.tensor(gen_rewards).to(state.device))
+        gen_rewards = gen_rewards.cpu().numpy()
 
-        gen_ppls = gather_object(gen_ppls)
-        gen_ppls = np.array(gen_ppls)
+        gen_ppls = gather(torch.tensor(gen_ppls).to(state.device))
+        gen_ppls = gen_ppls.cpu().numpy()
         mean_ppl = gen_ppls.mean().item()
 
         win_rate = (gen_rewards > ref_rewards).mean().item()
@@ -185,7 +185,7 @@ if __name__ == "__main__":
         args.wandb_run_id = None
         generations = {checkpoint_name: generations[checkpoint_name]}
         generations[checkpoint_name].dataset = generations[checkpoint_name].dataset.select(range(100))
-        reference.dataset = reference.dataset.select(range(500))
+        reference.dataset = reference.dataset.select(range(100))
 
     if args.wandb_run_id == "snow":
         # remove extra / at end

@@ -71,7 +71,7 @@ class PolicyAndValueWrapper(nn.Module):
 class PPOv2Trainer(Trainer):
     def __init__(
         self,
-        config: PPOv2Config,
+        config: ElasticPPOv2Config,
         tokenizer: PreTrainedTokenizer,
         policy: nn.Module,
         ref_policy: nn.Module,
@@ -111,7 +111,7 @@ class PPOv2Trainer(Trainer):
         accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps)
         self.accelerator = accelerator
         args.world_size = accelerator.num_processes
-        args.local_batch_size = (
+        args.local_batch_size = int(
             args.per_device_train_batch_size * args.gradient_accumulation_steps * args.num_mini_batches
         )
         args.micro_batch_size = int(args.per_device_train_batch_size * args.world_size)
@@ -215,6 +215,8 @@ class PPOv2Trainer(Trainer):
 
         if args.elastic_reset:
             self.ema_model = AveragedModel(self.model.policy, multi_avg_fn=get_ema_multi_avg_fn(args.ema_decay))
+        else:
+            self.ema_model = None
 
     def get_train_dataloader(self) -> DataLoader:
         return self.dataloader

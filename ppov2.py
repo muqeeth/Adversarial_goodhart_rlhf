@@ -78,7 +78,7 @@ if __name__ == "__main__":
     raw_datasets = load_dataset(args.dataset_name)
     if config.sanity_check:
         for key in raw_datasets:
-            raw_datasets[key] = raw_datasets[key].select(range(8))
+            raw_datasets[key] = raw_datasets[key].select(range(1024))
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"
@@ -97,6 +97,7 @@ if __name__ == "__main__":
     train_dataset = train_dataset.filter(lambda x: x["lengths"] <= args.max_length)
     eval_dataset = eval_dataset.filter(lambda x: x["lengths"] <= args.max_length)
     assert train_dataset[0]["input_ids"][-1] != tokenizer.eos_token_id, "The last token should not be an EOS token"
+
     ################
     # Training
     ################

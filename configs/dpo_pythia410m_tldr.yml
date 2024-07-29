@@ -27,7 +27,7 @@ gradient_checkpointing: False
 evaluation_strategy: "steps"
 eval_steps: 0.2
 save_strategy: steps
-save_steps: 0.2
+save_steps: 0.25
 hub_strategy: all_checkpoints
 logging_steps: 100
 ddp_find_unused_parameters: False

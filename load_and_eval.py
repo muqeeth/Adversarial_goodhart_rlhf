@@ -74,8 +74,8 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
                 out = [out]
             ref_rewards.extend([o["score"] for o in out])
 
-    ref_rewards = gather(torch.tensor(ref_rewards).to(state.device))
-    ref_rewards = ref_rewards.cpu().numpy()
+    ref_rewards = gather_object(ref_rewards)
+    ref_rewards = np.array(ref_rewards)
 
     step = 0
     for step_str, all_query_response in all_generations.items():
@@ -101,11 +101,11 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
             ):
                 gen_ppls += [r["ppl"] for r in out]
 
-        gen_rewards = gather(torch.tensor(gen_rewards).to(state.device))
-        gen_rewards = gen_rewards.cpu().numpy()
+        gen_rewards = gather_object(gen_rewards)
+        gen_rewards = np.array(gen_rewards)
 
-        gen_ppls = gather(torch.tensor(gen_ppls).to(state.device))
-        gen_ppls = gen_ppls.cpu().numpy()
+        gen_ppls = gather_object(gen_ppls)
+        gen_ppls = np.array(gen_ppls)
         mean_ppl = gen_ppls.mean().item()
 
         win_rate = (gen_rewards > ref_rewards).mean().item()

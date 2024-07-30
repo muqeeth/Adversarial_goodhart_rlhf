@@ -6,7 +6,7 @@ from typing import Optional
 import numpy as np
 import torch
 from accelerate import PartialState
-from accelerate.utils import gather, gather_object
+from accelerate.utils import gather_object
 from datasets import builder, load_from_disk
 from tqdm.auto import tqdm
 from transformers import pipeline

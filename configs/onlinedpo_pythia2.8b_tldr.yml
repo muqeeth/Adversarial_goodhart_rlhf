@@ -32,5 +32,5 @@ logging_steps: 100
 num_sample_generations: 5
 save_generations: True
 # lora
-use_peft: True
-lora_target_modules: all-linear
+# use_peft: True
+# lora_target_modules: all-linear

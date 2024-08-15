@@ -1,8 +1,9 @@
 import gc
 import math
 import os
+import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Tuple, Union
 
@@ -12,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import gather_object
+from accelerate.utils import broadcast, gather_object
 from datasets import Dataset
 from peft import PeftModel
 from torch.utils.data import DataLoader
@@ -40,6 +41,7 @@ from trl.trainer.utils import (
     print_rich_table,
     truncate_response,
 )
+from vllm import SamplingParams, SingleGPULLM
 
 from src.utils import prepare_deepspeed
 
@@ -49,9 +51,12 @@ class OnlineTrainerState(TrainerState):
     episode: int = 0
     raise ImportError("Please install our custom build `pip install vllm-online`") from None
 
-class OnlineDPOConfig(RLOOConfig):
+
+class OnlineDPOVLLMConfig(RLOOConfig):
     debug: bool = False
     save_generations: bool = False
+
+    vllm_gpu_memory_utilization: float = 0.8
 
     # DPO stuff w/o max_length
     beta: float = 0.1
@@ -82,10 +87,10 @@ class OnlineDPOConfig(RLOOConfig):
     rpo_alpha: Optional[float] = None
 
 
-class OnlineDPOTrainer(RLOOTrainer):
+class OnlineDPOVLLMTrainer(RLOOTrainer):
     def __init__(
         self,
-        config: RLOOConfig,
+        config: OnlineDPOVLLMConfig,
         tokenizer: PreTrainedTokenizer,
         policy: nn.Module,
         ref_policy: nn.Module,
@@ -319,6 +324,29 @@ class OnlineDPOTrainer(RLOOTrainer):
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "batch_num": []}
 
+        generation_config = SamplingParams(
+            temperature=args.temperature,
+            top_p=1.0,
+            max_tokens=args.response_length,
+            include_stop_str_in_output=True,
+        )
+
+        if accelerator.is_main_process:
+            response_ids_Q = deque(maxlen=1)
+            param_prompt_Q = deque(maxlen=1)
+            thread = threading.Thread(
+                target=vllm_generate,
+                args=(
+                    args.sft_model_path,
+                    f"cuda:{accelerator.num_processes}",
+                    args.vllm_gpu_memory_utilization,
+                    generation_config,
+                    response_ids_Q,
+                    param_prompt_Q,
+                ),
+            )
+            thread.start()
+
         gen_times = []
         reward_times = []
         train_times = []
@@ -328,6 +356,11 @@ class OnlineDPOTrainer(RLOOTrainer):
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
+            vllm_responses = torch.zeros(
+                (args.batch_size, args.response_length),
+                device=accelerator.device,
+                dtype=torch.long,
+            )
             with torch.no_grad():
                 queries = data["input_ids"].to(device)
                 queries = queries.repeat(args.rloo_k, 1)
@@ -340,57 +373,98 @@ class OnlineDPOTrainer(RLOOTrainer):
                 scores = []
                 sequence_lengths = []
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
+                    g_queries_list = gather_object(queries.tolist())
+                    if accelerator.is_main_process:
+                        g_queries_list = [
+                            [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id]
+                            for item in g_queries_list
+                        ]  # remove padding
+                        if batch_num == 1:
+                            param_prompt_Q.append((unwrapped_model, g_queries_list))
+
+                        if batch_num == 1:
+                            while True:
+                                try:
+                                    g_response_ids = response_ids_Q.popleft()
+                                    # print("got responses")
+                                    break
+                                except IndexError:
+                                    time.sleep(0.001)
+                                    continue
+
+                        DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
+                        g_padded_response_ids = [
+                            response + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
+                            for response in g_response_ids
+                        ]
+                        g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
+                        vllm_responses[:] = g_padded_response_ids
+
+                    broadcast(vllm_responses, 0)
+                    local_vllm_responses = vllm_responses[
+                        accelerator.local_process_index * queries.shape[0] : (accelerator.local_process_index + 1)
+                        * queries.shape[0]
+                    ]
+
+                    # breakpoint()
+                    # print("got responses1")
+                    query_responses = torch.cat((queries, local_vllm_responses), 1)
+                    logitss = []
                     for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
                         query = queries[i : i + args.local_rollout_forward_batch_size]
-                        gen_start_time = time.time()
-                        query_response, logits = generate(
-                            unwrapped_model,
-                            query,
-                            tokenizer.pad_token_id,
-                            generation_config,
+                        query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
+                        output = forward(unwrapped_model, query_response, tokenizer.pad_token_id)
+                        logits = output.logits[:, context_length - 1 : -1]
+                        logitss.append(logits)
+                        del output
+                    logitss = torch.cat(logitss, 0)
+
+                for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
+                    query = queries[i : i + args.local_rollout_forward_batch_size]
+                    query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
+                    response = query_response[:, context_length:]
+                    logits = logitss[i : i + args.local_rollout_forward_batch_size]
+                    logits /= args.temperature + 1e-7
+                    all_logprob = F.log_softmax(logits, dim=-1)
+                    logprob = torch.gather(all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
+                    del logits, all_logprob
+                    torch.cuda.empty_cache()
+
+                    if ref_policy is not None:
+                        ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
+                    else:
+                        with self.accelerator.unwrap_model(model).disable_adapter():
+                            ref_output = forward(model, query_response, tokenizer.pad_token_id)
+                    ref_logits = ref_output.logits[:, context_length - 1 : -1]
+                    ref_logits /= args.temperature + 1e-7
+                    ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
+                    ref_logprob = torch.gather(ref_all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
+                    del ref_output, ref_logits, ref_all_logprob
+                    torch.cuda.empty_cache()
+
+                    # Response Processing 1. truncate response after the first occurrence of `stop_token_id`
+                    postprocessed_response = response
+                    if args.stop_token_id is not None:  # handle the edge case when stop_token_id exists but is 0
+                        postprocessed_response = truncate_response(
+                            args.stop_token_id, tokenizer.pad_token_id, response
                         )
-                        gen_times.append(time.time() - gen_start_time)
-                        response = query_response[:, context_length:]
-                        all_logprob = F.log_softmax(logits, dim=-1)
-                        logprob = torch.gather(all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
-                        del logits, all_logprob
-                        torch.cuda.empty_cache()
 
-                        if ref_policy is not None:
-                            ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
-                        else:
-                            with self.accelerator.unwrap_model(model).disable_adapter():
-                                ref_output = forward(model, query_response, tokenizer.pad_token_id)
-                        ref_logits = ref_output.logits[:, context_length - 1 : -1]
-                        ref_logits /= args.temperature + 1e-7
-                        ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
-                        ref_logprob = torch.gather(ref_all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
-                        del ref_output, ref_logits, ref_all_logprob
-                        torch.cuda.empty_cache()
+                    # Response Processing 2. run reward model on the truncated responses
+                    postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
+                    sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
+                    reward_start_time = time.time()
+                    _, score, _ = get_reward(
+                        reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
+                    )
+                    reward_times.append(time.time() - reward_start_time)
 
-                        # Response Processing 1. truncate response after the first occurrence of `stop_token_id`
-                        postprocessed_response = response
-                        if args.stop_token_id is not None:  # handle the edge case when stop_token_id exists but is 0
-                            postprocessed_response = truncate_response(
-                                args.stop_token_id, tokenizer.pad_token_id, response
-                            )
-
-                        # Response Processing 2. run reward model on the truncated responses
-                        postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
-                        sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
-                        reward_start_time = time.time()
-                        _, score, _ = get_reward(
-                            reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
-                        )
-                        reward_times.append(time.time() - reward_start_time)
-
-                        query_responses.append(query_response)
-                        responses.append(response)
-                        postprocessed_responses.append(postprocessed_response)
-                        logprobs.append(logprob)
-                        ref_logprobs.append(ref_logprob)
-                        sequence_lengths.append(sequence_length)
-                        scores.append(score)
+                    query_responses.append(query_response)
+                    responses.append(response)
+                    postprocessed_responses.append(postprocessed_response)
+                    logprobs.append(logprob)
+                    ref_logprobs.append(ref_logprob)
+                    sequence_lengths.append(sequence_length)
+                    scores.append(score)
                 query_responses = torch.cat(query_responses, 0)
                 responses = torch.cat(responses, 0)
                 logprobs = torch.cat(logprobs, 0)
@@ -688,3 +762,55 @@ class OnlineDPOTrainer(RLOOTrainer):
 
             if wandb.run is not None:
                 wandb.log({"completions": wandb.Table(dataframe=df)})
+
+
+def vllm_generate(
+    model_name_or_path: str,
+    vllm_device: str,
+    vllm_gpu_memory_utilization: float,
+    generation_config: SamplingParams,
+    response_ids_Q: deque,
+    param_prompt_Q: deque,
+):
+    llm = SingleGPULLM(
+        model=model_name_or_path,
+        revision="main",
+        tokenizer_revision="main",
+        tensor_parallel_size=1,
+        device=vllm_device,
+        gpu_memory_utilization=vllm_gpu_memory_utilization,
+    )
+    print("🔥🔥🔥 vllm loaded")
+    llmp = llm.llm_engine.model_executor.driver_worker.model_runner.model
+    i = 0
+    while True:
+        try:
+            unwrapped_model, g_queries_list = param_prompt_Q.popleft()
+            print("got queries==================")
+            break
+        except Exception as e:
+            # print(e)
+            time.sleep(0.001)
+            continue
+    while True:
+        # i += 1
+        # if i != 2:
+        #     while True:
+        #         try:
+        #             unwrapped_model, g_queries_list = param_prompt_Q.popleft()
+        #             print("got queries==================")
+        #             break
+        #         except Exception as e:
+        #             # print(e)
+        #             time.sleep(0.4)
+        #             continue
+
+        print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
+        start_time = time.time()
+        llmp.load_weights(unwrapped_model.named_parameters())
+        print(f"Time to load weights: {time.time() - start_time:.2f} seconds")
+        outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=generation_config)
+        response_token_ids = []
+        for output in outputs:
+            response_token_ids.append(output.outputs[0].token_ids)
+        response_ids_Q.append(response_token_ids)

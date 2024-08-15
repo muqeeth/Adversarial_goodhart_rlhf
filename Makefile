@@ -229,6 +229,7 @@ else
 		--env WANDB_TAGS=${SHORT_REVISION} \
 		--env WANDB_DIR=/tmp \
 		--env NPROC=${NPROC} \
+		--env VLLM=${VLLM} \
 		--env FP=${FP} \
 		--workdir $(_WORKDIR) \
 		--image $(IMAGE):$(IMAGE_REVISION) \

@@ -1,6 +1,9 @@
 set -e 
 COMMAND_ARG=$@
-accelerate launch --config_file configs/deepspeed_zero2.yaml --deepspeed_config_file configs/ds_config.json --mixed_precision=${FP:=fp16} --num_processes ${NPROC:=1} $COMMAND_ARG
+: ${VLLM:=0}
+: ${NPROC:=1}
+NUM_PROC=$((NPROC - VLLM))
+accelerate launch --config_file configs/deepspeed_zero2.yaml --deepspeed_config_file configs/ds_config.json --mixed_precision=${FP:=fp16} --num_processes ${NUM_PROC} $COMMAND_ARG
 MODEL_PATH=$(readlink -f output_dir)
 echo "Using output dir symlinked: $MODEL_PATH"
 MODEL_PATH_ARG="--model_name_or_path $MODEL_PATH"

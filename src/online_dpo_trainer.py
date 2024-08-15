@@ -51,6 +51,7 @@ class OnlineTrainerState(TrainerState):
 
 @dataclass
 class OnlineDPOConfig(RLOOConfig):
+    debug: bool = False
     save_generations: bool = False
 
     # DPO stuff w/o max_length
@@ -319,7 +320,12 @@ class OnlineDPOTrainer(RLOOTrainer):
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "batch_num": []}
 
+        gen_times = []
+        reward_times = []
+        train_times = []
+        total_times = []
         for batch_num in range(1, self.num_batches + 1):
+            batch_start_time = time.time()
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
@@ -337,12 +343,14 @@ class OnlineDPOTrainer(RLOOTrainer):
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
                     for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
                         query = queries[i : i + args.local_rollout_forward_batch_size]
+                        gen_start_time = time.time()
                         query_response, logits = generate(
                             unwrapped_model,
                             query,
                             tokenizer.pad_token_id,
                             generation_config,
                         )
+                        gen_times.append(time.time() - gen_start_time)
                         response = query_response[:, context_length:]
                         all_logprob = F.log_softmax(logits, dim=-1)
                         logprob = torch.gather(all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
@@ -371,9 +379,11 @@ class OnlineDPOTrainer(RLOOTrainer):
                         # Response Processing 2. run reward model on the truncated responses
                         postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                         sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
+                        reward_start_time = time.time()
                         _, score, _ = get_reward(
                             reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
                         )
+                        reward_times.append(time.time() - reward_start_time)
 
                         query_responses.append(query_response)
                         responses.append(response)
@@ -444,6 +454,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                 torch.cuda.empty_cache()
 
             # Do multiple epochs of PPO training, with a fresh random shuffle in each epoch
+            train_start_time = time.time()
             for ppo_epoch_idx in range(args.num_ppo_epochs):
                 b_inds = np.arange(args.local_batch_size)
                 minibatch_idx = 0
@@ -552,6 +563,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                     # fmt: on
                     torch.cuda.empty_cache()
 
+            train_times.append(time.time() - train_start_time)
             all_chosen_rewards = torch.cat(all_chosen_rewards, 0)
             all_rejected_rewards = torch.cat(all_rejected_rewards, 0)
             all_chosen_logprobs = torch.cat(all_chosen_logprobs, 0)
@@ -610,6 +622,8 @@ class OnlineDPOTrainer(RLOOTrainer):
             if args.num_sample_generations > 0 and (batch_num - 1) % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)
 
+            total_times.append(time.time() - batch_start_time)
+
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
         if self.control.should_save:
             self._save_checkpoint(model, trial=None, metrics=None)
@@ -619,6 +633,15 @@ class OnlineDPOTrainer(RLOOTrainer):
             if accelerator.is_local_main_process:
                 dataset = Dataset.from_dict(saved_data)
                 dataset.save_to_disk(os.path.join(self.args.output_dir, "online_dataset"))
+
+        if self.args.debug:
+            accelerator.print(f"avg total time {sum(total_times) / self.num_batches: .1f}")
+            accelerator.print(f"avg gen time {sum(gen_times) / self.num_batches:.1f}")
+            accelerator.print(f"avg reward time {sum(reward_times) / self.num_batches:.1f}")
+            accelerator.print(f"avg train time {sum(train_times) / self.num_batches:.1f}")
+            accelerator.print(
+                f"avg extra time {(sum(total_times) - sum(gen_times) - sum(reward_times) - sum(train_times)  )/ self.num_batches:.1f}"
+            )
 
     def generate_completions(self, sampling: bool = False):
         args = self.args

@@ -82,7 +82,7 @@ if __name__ == "__main__":
         config.push_to_hub = False
         config.report_to = ""
         config.save_strategy = "no"
-        config.total_episodes = 256
+        config.total_episodes = 2048
         config.per_device_train_batch_size = 2
         config.gradient_accumulation_steps = 4
         config.local_rollout_forward_batch_size = 8

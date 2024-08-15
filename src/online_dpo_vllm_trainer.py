@@ -49,15 +49,13 @@ from src.utils import prepare_deepspeed
 @dataclass
 class OnlineTrainerState(TrainerState):
     episode: int = 0
-    raise ImportError("Please install our custom build `pip install vllm-online`") from None
 
 
 class OnlineDPOVLLMConfig(RLOOConfig):
-    debug: bool = False
+    print_times: bool = False
     save_generations: bool = False
 
-    vllm_gpu_memory_utilization: float = 0.8
-
+    # vllm_gpu_memory_utilization: float = 0.8
     # DPO stuff w/o max_length
     beta: float = 0.1
     label_smoothing: float = 0
@@ -339,7 +337,8 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 args=(
                     args.sft_model_path,
                     f"cuda:{accelerator.num_processes}",
-                    args.vllm_gpu_memory_utilization,
+                    0.8,
+                    # args.vllm_gpu_memory_utilization,
                     generation_config,
                     response_ids_Q,
                     param_prompt_Q,
@@ -357,7 +356,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             self.lr_scheduler.step()
             data = next(iter_dataloader)
             vllm_responses = torch.zeros(
-                (args.batch_size, args.response_length),
+                (args.batch_size * args.rloo_k, args.response_length),
                 device=accelerator.device,
                 dtype=torch.long,
             )
@@ -366,12 +365,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 queries = queries.repeat(args.rloo_k, 1)
                 context_length = queries.shape[1]
                 query_responses = []
-                responses = []
-                postprocessed_responses = []
-                logprobs = []
-                ref_logprobs = []
-                scores = []
-                sequence_lengths = []
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
                     g_queries_list = gather_object(queries.tolist())
                     if accelerator.is_main_process:
@@ -389,7 +382,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                                     # print("got responses")
                                     break
                                 except IndexError:
-                                    time.sleep(0.001)
+                                    time.sleep(0.01)
                                     continue
 
                         DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
@@ -419,6 +412,12 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                         del output
                     logitss = torch.cat(logitss, 0)
 
+                responses = []
+                postprocessed_responses = []
+                logprobs = []
+                ref_logprobs = []
+                scores = []
+                sequence_lengths = []
                 for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
                     query = queries[i : i + args.local_rollout_forward_batch_size]
                     query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
@@ -458,23 +457,23 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     )
                     reward_times.append(time.time() - reward_start_time)
 
-                    query_responses.append(query_response)
+                    # query_responses.append(query_response)
                     responses.append(response)
                     postprocessed_responses.append(postprocessed_response)
                     logprobs.append(logprob)
                     ref_logprobs.append(ref_logprob)
                     sequence_lengths.append(sequence_length)
                     scores.append(score)
-                query_responses = torch.cat(query_responses, 0)
+                # query_responses = torch.cat(query_responses, 0)
                 responses = torch.cat(responses, 0)
                 logprobs = torch.cat(logprobs, 0)
                 ref_logprobs = torch.cat(ref_logprobs, 0)
                 postprocessed_responses = torch.cat(postprocessed_responses, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 scores = torch.cat(scores, 0)
-                del (logprob, ref_logprob, score)
-                torch.cuda.empty_cache()
+                # del (logprob, ref_logprob, score)
                 gc.collect()
+                torch.cuda.empty_cache()
 
                 # Response Processing 3. filter response. Ensure that the sample contains stop_token_id
                 # responses not passing that filter will receive a low (fixed) score
@@ -707,7 +706,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 dataset = Dataset.from_dict(saved_data)
                 dataset.save_to_disk(os.path.join(self.args.output_dir, "online_dataset"))
 
-        if self.args.debug:
+        if self.args.print_times:
             accelerator.print(f"avg total time {sum(total_times) / self.num_batches: .1f}")
             accelerator.print(f"avg gen time {sum(gen_times) / self.num_batches:.1f}")
             accelerator.print(f"avg reward time {sum(reward_times) / self.num_batches:.1f}")

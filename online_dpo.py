@@ -15,6 +15,7 @@ from trl import ModelConfig
 from trl.trainer.utils import get_peft_config
 
 from src.online_dpo_trainer import OnlineDPOConfig, OnlineDPOTrainer
+from src.online_dpo_vllm_trainer import OnlineDPOVLLMConfig, OnlineDPOVLLMTrainer
 from src.utils import TRLParser, WandbLogModelConfig
 
 
@@ -28,6 +29,7 @@ class ScriptArguments:
     # output_model_name: str = field(default="", metadata={"help": "model name to upload"})
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     wandb_run_id: Optional[str] = field(default=None)
+    vllm: bool = False
 
 
 def prepare_dataset(dataset, tokenizer):
@@ -108,7 +110,12 @@ if __name__ == "__main__":
     # Training
     ################
 
-    trainer = OnlineDPOTrainer(
+    if args.vllm:
+        TrainerCls = OnlineDPOVLLMTrainer
+    else:
+        TrainerCls = OnlineDPOTrainer
+
+    trainer = TrainerCls(
         config=config,
         tokenizer=tokenizer,
         policy=policy,

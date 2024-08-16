@@ -331,7 +331,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
         if accelerator.is_main_process:
             response_ids_Q = deque(maxlen=1)
-            param_prompt_Q = deque(maxlen=1)
+            param_prompt_Q = deque(maxlen=2)
             thread = threading.Thread(
                 target=vllm_generate,
                 args=(
@@ -791,7 +791,7 @@ def vllm_generate(
         tokenizer_revision="main",
         tensor_parallel_size=1,
         device=vllm_device,
-        # dtype=torch.float16,
+        dtype=torch.float16,
         gpu_memory_utilization=vllm_gpu_memory_utilization,
     )
     print("🔥🔥🔥 vllm loaded")
@@ -813,6 +813,7 @@ def vllm_generate(
             start_time = time.time()
             llmp.load_weights(unwrapped_model.named_parameters())
             print(f"Time to load weights: {time.time() - start_time:.2f} seconds")
+
         outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=generation_config)
         response_token_ids = []
         for output in outputs:

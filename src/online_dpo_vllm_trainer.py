@@ -53,7 +53,7 @@ class OnlineTrainerState(TrainerState):
 
 
 class OnlineDPOVLLMConfig(RLOOConfig):
-    print_times: bool = False
+    # print_times: bool = False
     save_generations: bool = False
 
     # vllm_gpu_memory_utilization: float = 0.8
@@ -710,14 +710,14 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 dataset = Dataset.from_dict(saved_data)
                 dataset.save_to_disk(os.path.join(self.args.output_dir, "online_dataset"))
 
-        if self.args.print_times:
-            accelerator.print(f"avg total time {sum(total_times) / self.num_batches: .1f}")
-            accelerator.print(f"avg gen time {sum(gen_times) / self.num_batches:.1f}")
-            accelerator.print(f"avg reward time {sum(reward_times) / self.num_batches:.1f}")
-            accelerator.print(f"avg train time {sum(train_times) / self.num_batches:.1f}")
-            accelerator.print(
-                f"avg extra time {(sum(total_times) - sum(gen_times) - sum(reward_times) - sum(train_times)  )/ self.num_batches:.1f}"
-            )
+        # if self.args.print_times:
+        # accelerator.print(f"avg total time {sum(total_times) / self.num_batches: .1f}")
+        # accelerator.print(f"avg gen time {sum(gen_times) / self.num_batches:.1f}")
+        # accelerator.print(f"avg reward time {sum(reward_times) / self.num_batches:.1f}")
+        # accelerator.print(f"avg train time {sum(train_times) / self.num_batches:.1f}")
+        # accelerator.print(
+        #     f"avg extra time {(sum(total_times) - sum(gen_times) - sum(reward_times) - sum(train_times)  )/ self.num_batches:.1f}"
+        # )
 
     def generate_completions(self, sampling: bool = False):
         args = self.args

@@ -345,9 +345,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
         # send first batch of data to actor
         data = next(iter_dataloader)
-        queries = data["input_ids"].to(device)
-        queries = queries.repeat(args.rloo_k, 1)
-        g_queries_list = gather_object(queries.tolist())
+        next_queries = data["input_ids"].to(device)
+        next_queries = next_queries.repeat(args.rloo_k, 1)
+        g_queries_list = gather_object(next_queries.tolist())
         if accelerator.is_main_process:
             g_queries_list = [
                 [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id] for item in g_queries_list
@@ -357,6 +357,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             # time.sleep(1)
 
         for batch_num in range(1, self.num_batches + 1):
+            queries = next_queries
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
@@ -366,20 +367,20 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 dtype=torch.long,
             )
             with torch.no_grad():
-                queries = data["input_ids"].to(device)
-                queries = queries.repeat(args.rloo_k, 1)
-                context_length = queries.shape[1]
-                query_responses = []
+                next_queries = data["input_ids"].to(device)
+                next_queries = next_queries.repeat(args.rloo_k, 1)
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
-                    g_queries_list = gather_object(queries.tolist())
+                    g_queries_list = gather_object(next_queries.tolist())
                     if accelerator.is_main_process:
                         g_queries_list = [
                             [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id]
                             for item in g_queries_list
                         ]  # remove padding
 
+                        # send next queries to be generated
                         param_prompt_Q.put((unwrapped_model, g_queries_list))
 
+                        # get response for previous queries
                         g_response_ids = response_ids_Q.get()
 
                         DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
@@ -399,6 +400,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                     # breakpoint()
                     # print("got responses1")
+                    context_length = queries.shape[1]
                     query_responses = torch.cat((queries, local_vllm_responses), 1)
                     logitss = []
                     for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):

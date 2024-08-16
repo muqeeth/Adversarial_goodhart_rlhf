@@ -350,6 +350,20 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         reward_times = []
         train_times = []
         total_times = []
+
+        # send first batch of data to actor
+        data = next(iter_dataloader)
+        queries = data["input_ids"].to(device)
+        queries = queries.repeat(args.rloo_k, 1)
+        g_queries_list = gather_object(queries.tolist())
+        if accelerator.is_main_process:
+            g_queries_list = [
+                [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id] for item in g_queries_list
+            ]  # remove padding
+            param_prompt_Q.append((None, g_queries_list))
+            # gives it time to get data from queue
+            time.sleep(1)
+
         for batch_num in range(1, self.num_batches + 1):
             batch_start_time = time.time()
             self.state.episode += 1 * args.batch_size
@@ -372,18 +386,17 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                             [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id]
                             for item in g_queries_list
                         ]  # remove padding
-                        if batch_num == 1:
-                            param_prompt_Q.append((unwrapped_model, g_queries_list))
 
-                        if batch_num == 1:
-                            while True:
-                                try:
-                                    g_response_ids = response_ids_Q.popleft()
-                                    # print("got responses")
-                                    break
-                                except IndexError:
-                                    time.sleep(0.01)
-                                    continue
+                        param_prompt_Q.append((unwrapped_model, g_queries_list))
+
+                        while True:
+                            try:
+                                g_response_ids = response_ids_Q.popleft()
+                                # print("got responses")
+                                break
+                            except IndexError:
+                                time.sleep(0.1)
+                                continue
 
                         DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
                         g_padded_response_ids = [
@@ -636,6 +649,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     torch.cuda.empty_cache()
 
             train_times.append(time.time() - train_start_time)
+            accelerator.print(f">> training took {train_times[-1]}")
             all_chosen_rewards = torch.cat(all_chosen_rewards, 0)
             all_rejected_rewards = torch.cat(all_rejected_rewards, 0)
             all_chosen_logprobs = torch.cat(all_chosen_logprobs, 0)
@@ -777,37 +791,28 @@ def vllm_generate(
         tokenizer_revision="main",
         tensor_parallel_size=1,
         device=vllm_device,
+        # dtype=torch.float16,
         gpu_memory_utilization=vllm_gpu_memory_utilization,
     )
     print("🔥🔥🔥 vllm loaded")
     llmp = llm.llm_engine.model_executor.driver_worker.model_runner.model
     i = 0
     while True:
-        try:
-            unwrapped_model, g_queries_list = param_prompt_Q.popleft()
-            print("got queries==================")
-            break
-        except Exception as e:
-            # print(e)
-            time.sleep(0.001)
-            continue
-    while True:
-        # i += 1
-        # if i != 2:
-        #     while True:
-        #         try:
-        #             unwrapped_model, g_queries_list = param_prompt_Q.popleft()
-        #             print("got queries==================")
-        #             break
-        #         except Exception as e:
-        #             # print(e)
-        #             time.sleep(0.4)
-        #             continue
+        i += 1
+        while True:
+            try:
+                unwrapped_model, g_queries_list = param_prompt_Q.popleft()
+                print("got queries==================")
+                break
+            except Exception:
+                time.sleep(0.1)
+                continue
 
-        print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
-        start_time = time.time()
-        llmp.load_weights(unwrapped_model.named_parameters())
-        print(f"Time to load weights: {time.time() - start_time:.2f} seconds")
+        if i > 2:
+            print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
+            start_time = time.time()
+            llmp.load_weights(unwrapped_model.named_parameters())
+            print(f"Time to load weights: {time.time() - start_time:.2f} seconds")
         outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=generation_config)
         response_token_ids = []
         for output in outputs:

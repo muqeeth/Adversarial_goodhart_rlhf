@@ -700,6 +700,10 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             if batch_num % self.state.logging_steps == 0:
                 accelerator.print(f"🙆🙆🙆 total training thread took {total_times[-1]:.2f}")
 
+        if accelerator.is_main_process:
+            param_prompt_Q.put((None, None))  # end thread
+            thread.join()
+
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
         if self.control.should_save:
             self._save_checkpoint(model, trial=None, metrics=None)
@@ -792,6 +796,9 @@ def vllm_generate(
         i += 1
         unwrapped_model, g_queries_list = param_prompt_Q.get()
         # print("got queries==================")
+        if unwrapped_model is None and g_queries_list is None:
+            print("model params and queries are None, exiting")
+            break
 
         start_time = time.time()
         if i > 2:

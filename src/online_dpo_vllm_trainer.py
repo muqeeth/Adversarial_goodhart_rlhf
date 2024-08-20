@@ -44,6 +44,7 @@ from trl.trainer.utils import (
 )
 from vllm import SamplingParams, SingleGPULLM
 
+from src.online_dpo_trainer import OnlineDPOConfig
 from src.utils import prepare_deepspeed
 
 
@@ -52,38 +53,10 @@ class OnlineTrainerState(TrainerState):
     episode: int = 0
 
 
-class OnlineDPOVLLMConfig(RLOOConfig):
-    # print_times: bool = False
-    save_generations: bool = False
-
+@dataclass
+class OnlineDPOVLLMConfig(OnlineDPOConfig):
+    sync: bool = False
     # vllm_gpu_memory_utilization: float = 0.8
-    # DPO stuff w/o max_length
-    beta: float = 0.1
-    label_smoothing: float = 0
-    loss_type: Literal["sigmoid", "hinge", "ipo", "kto_pair", "bco_pair", "sppo_hard", "nca_pair", "robust"] = (
-        "sigmoid"
-    )
-    label_pad_token_id: int = -100
-    padding_value: int = 0
-    truncation_mode: str = "keep_end"
-    # max_length: Optional[int] = None
-    max_prompt_length: Optional[int] = None
-    max_target_length: Optional[int] = None
-    is_encoder_decoder: Optional[bool] = None
-    disable_dropout: bool = True
-    generate_during_eval: bool = False
-    precompute_ref_log_probs: bool = False
-    dataset_num_proc: Optional[int] = None
-    model_init_kwargs: Optional[Dict] = None
-    ref_model_init_kwargs: Optional[Dict] = None
-    model_adapter_name: Optional[str] = None
-    ref_adapter_name: Optional[str] = None
-    reference_free: bool = False
-    force_use_ref_model: bool = False
-    sync_ref_model: bool = False
-    ref_model_mixup_alpha: float = 0.9
-    ref_model_sync_steps: int = 64
-    rpo_alpha: Optional[float] = None
 
 
 class OnlineDPOVLLMTrainer(RLOOTrainer):
@@ -343,18 +316,19 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         train_times = []
         total_times = []
 
-        # send first batch of data to actor
-        data = next(iter_dataloader)
-        next_queries = data["input_ids"].to(device)
-        next_queries = next_queries.repeat(args.rloo_k, 1)
-        g_queries_list = gather_object(next_queries.tolist())
-        if accelerator.is_main_process:
-            g_queries_list = [
-                [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id] for item in g_queries_list
-            ]  # remove padding
-            param_prompt_Q.put((None, g_queries_list))
-            # gives it time to get data from queue
-            # time.sleep(1)
+        if self.args.sync:
+            next_queries = None
+        else:
+            # send first batch of data to actor
+            data = next(iter_dataloader)
+            next_queries = data["input_ids"].to(device)
+            next_queries = next_queries.repeat(args.rloo_k, 1)
+            g_queries_list = gather_object(next_queries.tolist())
+            if accelerator.is_main_process:
+                g_queries_list = [
+                    [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id] for item in g_queries_list
+                ]  # remove padding
+                param_prompt_Q.put((None, g_queries_list))
 
         for batch_num in range(1, self.num_batches + 1):
             queries = next_queries
@@ -369,6 +343,10 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             with torch.no_grad():
                 next_queries = data["input_ids"].to(device)
                 next_queries = next_queries.repeat(args.rloo_k, 1)
+
+                if self.args.sync:
+                    queries = next_queries
+
                 with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
                     g_queries_list = gather_object(next_queries.tolist())
                     if accelerator.is_main_process:

@@ -51,7 +51,7 @@ def prepare_dataset(dataset, tokenizer):
 
 
 if __name__ == "__main__":
-    parser = TRLParser((ScriptArguments, OnlineDPOConfig, ModelConfig))
+    parser = TRLParser((ScriptArguments, OnlineDPOVLLMConfig, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
 
     if args.output_global_parent_dir is not None:
@@ -94,9 +94,10 @@ if __name__ == "__main__":
         config.save_strategy = "no"
         config.save_generations = False
         config.num_sample_generations = 0
-        config.total_episodes = 504
+        config.total_episodes = 1008
+        config.logging_steps = 1
         # config.per_device_train_batch_size = 8
-        config.gradient_accumulation_steps = 7
+        # config.gradient_accumulation_steps = 7
 
     train_dataset = raw_datasets[args.dataset_train_split]
     eval_dataset = raw_datasets[args.dataset_test_split]

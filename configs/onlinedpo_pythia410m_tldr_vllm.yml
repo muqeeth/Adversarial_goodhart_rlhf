@@ -21,7 +21,7 @@ gradient_accumulation_steps: 21
 model_name_or_path: mnoukhov/pythia410m-sft-tldr 
 sft_model_path: mnoukhov/pythia410m-sft-tldr 
 reward_model_path: mnoukhov/pythia410m-rm-tldr6.9b
-local_rollout_forward_batch_size: 32
+local_rollout_forward_batch_size: 24
 non_eos_penalty: True
 stop_token: eos
 # evaluation_strategy: "steps"

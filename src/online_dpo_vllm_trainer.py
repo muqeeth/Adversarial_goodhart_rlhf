@@ -56,6 +56,7 @@ class OnlineTrainerState(TrainerState):
 @dataclass
 class OnlineDPOVLLMConfig(OnlineDPOConfig):
     sync: bool = False
+    vllm: bool = False
     # vllm_gpu_memory_utilization: float = 0.8
 
 

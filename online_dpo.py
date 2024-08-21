@@ -29,7 +29,6 @@ class ScriptArguments:
     # output_model_name: str = field(default="", metadata={"help": "model name to upload"})
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     wandb_run_id: Optional[str] = field(default=None)
-    vllm: bool = False
 
 
 def prepare_dataset(dataset, tokenizer):
@@ -94,10 +93,11 @@ if __name__ == "__main__":
         config.save_strategy = "no"
         config.save_generations = False
         config.num_sample_generations = 0
-        config.total_episodes = 1008
         config.logging_steps = 1
         # config.per_device_train_batch_size = 8
-        # config.gradient_accumulation_steps = 7
+        # config.gradient_accumulation_steps = 8
+        # nproc = PartialState().num_processes
+        # config.total_episodes = 64 * nproc * 5
 
     train_dataset = raw_datasets[args.dataset_train_split]
     eval_dataset = raw_datasets[args.dataset_test_split]
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # Training
     ################
 
-    if args.vllm:
+    if config.vllm:
         TrainerCls = OnlineDPOVLLMTrainer
     else:
         TrainerCls = OnlineDPOTrainer

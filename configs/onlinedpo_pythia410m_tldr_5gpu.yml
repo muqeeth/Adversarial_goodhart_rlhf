@@ -9,7 +9,7 @@ fp16: True
 ## online dpo stuff
 loss_type: sigmoid
 ## ppo stuff
-total_episodes: 131072
+total_episodes: 133120
 response_length: 53
 num_ppo_epochs: 1
 num_mini_batches: 1 

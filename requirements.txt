@@ -3,3 +3,4 @@ peft==0.10.0
 wandb
 vllm-online
 deepspeed
+transformers==4.43.3

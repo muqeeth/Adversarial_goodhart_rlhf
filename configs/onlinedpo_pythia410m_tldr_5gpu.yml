@@ -9,17 +9,17 @@ fp16: True
 ## online dpo stuff
 loss_type: sigmoid
 ## ppo stuff
-total_episodes: 133120
+total_episodes: 122880
 response_length: 53
 num_ppo_epochs: 1
 num_mini_batches: 1 
 learning_rate: 3.0e-6
 per_device_train_batch_size: 8
-gradient_accumulation_steps: 13
+gradient_accumulation_steps: 12
 model_name_or_path: mnoukhov/pythia410m-sft-tldr 
 sft_model_path: mnoukhov/pythia410m-sft-tldr 
 reward_model_path: mnoukhov/pythia410m-rm-tldr6.9b
-local_rollout_forward_batch_size: 8
+local_rollout_forward_batch_size: 32
 non_eos_penalty: True
 stop_token: eos
 # evaluation_strategy: "steps"

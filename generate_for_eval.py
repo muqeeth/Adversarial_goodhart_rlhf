@@ -95,12 +95,17 @@ def generate(script_args):
             del merged
             script_args.tokenizer_name = script_args.base_model_name
 
+        if 16 % script_args.num_gpus == 0:
+            tensor_parallel_size = script_args.num_gpus
+        else:
+            tensor_parallel_size = max(divisor for divisor in [1, 2, 4, 8] if divisor < script_args.num_gpus)
+
         llm = LLM(
             model=model_name_or_path if merged_model_path is None else merged_model_path,
             tokenizer=script_args.tokenizer_name,
             dtype=script_args.gen_dtype,
             trust_remote_code=True,
-            tensor_parallel_size=script_args.num_gpus,
+            tensor_parallel_size=tensor_parallel_size,
             gpu_memory_utilization=0.75,
         )
 

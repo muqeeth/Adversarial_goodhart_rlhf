@@ -30,7 +30,8 @@ from transformers.integrations import get_reporting_integration_callbacks
 from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.models.utils import unwrap_model_for_generation
-from trl.trainer.rloo_config import RLOOConfig
+
+# from trl.trainer.rloo_config import RLOOConfig
 from trl.trainer.rloo_trainer import INVALID_LOGPROB, RLOOTrainer
 from trl.trainer.utils import (
     disable_dropout_in_model,
@@ -357,10 +358,14 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                         ]  # remove padding
 
                         # send next queries to be generated
+                        put_start_time = time.time()
                         param_prompt_Q.put((unwrapped_model, g_queries_list))
+                        put_time = time.time() - put_start_time
 
                         # get response for previous queries
+                        get_start_time = time.time()
                         g_response_ids = response_ids_Q.get()
+                        get_time = time.time() - get_start_time
 
                         DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
                         g_padded_response_ids = [
@@ -370,26 +375,28 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                         g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
                         vllm_responses[:] = g_padded_response_ids
 
-                    batch_start_time = time.time()
-                    broadcast(vllm_responses, 0)
-                    local_vllm_responses = vllm_responses[
-                        accelerator.local_process_index * queries.shape[0] : (accelerator.local_process_index + 1)
-                        * queries.shape[0]
-                    ]
+                batch_start_time = time.time()
+                broadcast(vllm_responses, 0)
+                local_vllm_responses = vllm_responses[
+                    accelerator.local_process_index * queries.shape[0] : (accelerator.local_process_index + 1)
+                    * queries.shape[0]
+                ]
 
-                    # breakpoint()
-                    # print("got responses1")
+                # breakpoint()
+                # print("got responses1")
+                with torch.no_grad():
                     context_length = queries.shape[1]
                     query_responses = torch.cat((queries, local_vllm_responses), 1)
                     logitss = []
                     for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
                         query = queries[i : i + args.local_rollout_forward_batch_size]
                         query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
-                        output = forward(unwrapped_model, query_response, tokenizer.pad_token_id)
+                        output = forward(model, query_response, tokenizer.pad_token_id)
                         logits = output.logits[:, context_length - 1 : -1]
                         logitss.append(logits)
                         del output
-                    logitss = torch.cat(logitss, 0)
+                logitss = torch.cat(logitss, 0)
+                logits_time = time.time() - batch_start_time
 
                 responses = []
                 postprocessed_responses = []
@@ -791,4 +798,5 @@ def vllm_generate(
         response_token_ids = []
         for output in outputs:
             response_token_ids.append(output.outputs[0].token_ids)
+
         response_ids_Q.put(response_token_ids)

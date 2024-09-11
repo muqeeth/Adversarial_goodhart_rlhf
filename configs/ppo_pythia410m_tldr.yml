@@ -1,4 +1,4 @@
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: snow
 output_dir: ppo_pythia410m_tldr6.9b
 run_name: ppo_pythia410m_tldr6.9b
@@ -11,7 +11,7 @@ num_ppo_epochs: 1
 total_episodes: 131072
 response_length: 53
 num_ppo_epochs: 1
-num_mini_batches: 1 
+num_mini_batches: 1
 learning_rate: 3.0e-6
 per_device_train_batch_size: 8
 gradient_accumulation_steps: 16

@@ -31,7 +31,6 @@ from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.models.utils import unwrap_model_for_generation
 
-# from trl.trainer.rloo_config import RLOOConfig
 from trl.trainer.rloo_trainer import INVALID_LOGPROB, RLOOTrainer
 from trl.trainer.utils import (
     disable_dropout_in_model,
@@ -43,10 +42,12 @@ from trl.trainer.utils import (
     print_rich_table,
     truncate_response,
 )
-from vllm import SamplingParams, SingleGPULLM
+from vllm import SamplingParams, LLM
+
 
 from src.online_dpo_trainer import OnlineDPOConfig
 from src.utils import prepare_deepspeed
+from src.vllm_utils import vllm_single_gpu_patch
 
 
 @dataclass
@@ -58,7 +59,9 @@ class OnlineTrainerState(TrainerState):
 class OnlineDPOVLLMConfig(OnlineDPOConfig):
     sync: bool = False
     vllm: bool = False
-    # vllm_gpu_memory_utilization: float = 0.8
+    vllm_device: str = None
+    "default will put it on accelerate.num_processes + 1"
+    vllm_gpu_memory_utilization: float = 0.8
 
 
 class OnlineDPOVLLMTrainer(RLOOTrainer):
@@ -297,14 +300,15 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         )
 
         if accelerator.is_main_process:
+            vllm_device = args.vllm_device or f"cuda:{accelerator.num_processes}"
             response_ids_Q = queue.Queue(maxsize=1)
             param_prompt_Q = queue.Queue(maxsize=1)
             thread = threading.Thread(
                 target=vllm_generate,
                 args=(
                     args.sft_model_path,
-                    f"cuda:{accelerator.num_processes}",
-                    0.8,
+                    vllm_device,
+                    args.vllm_gpu_memory_utilization,
                     generation_config,
                     response_ids_Q,
                     param_prompt_Q,
@@ -369,7 +373,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                         DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
                         g_padded_response_ids = [
-                            response + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
+                            response.tolist() + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
                             for response in g_response_ids
                         ]
                         g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
@@ -766,7 +770,8 @@ def vllm_generate(
     param_prompt_Q: queue.Queue,
     logging_steps: int,
 ):
-    llm = SingleGPULLM(
+    vllm_single_gpu_patch()
+    llm = LLM(
         model=model_name_or_path,
         revision="main",
         tokenizer_revision="main",

@@ -401,6 +401,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                         logits = output.logits[:, context_length - 1 : -1]
                         logitss.append(logits)
                         del output
+                        torch.cuda.empty_cache()
                 logitss = torch.cat(logitss, 0)
                 logits_time = time.time() - batch_start_time
 

@@ -83,15 +83,20 @@ if __name__ == "__main__":
         trust_remote_code=True,
     )
 
-    reward_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1)
-    policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
+    torch_dtype = (
+        model_config.torch_dtype
+        if model_config.torch_dtype in ["auto", None]
+        else getattr(torch, model_config.torch_dtype)
+    )
+    reward_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1, torch_dtype=torch_dtype)
+    policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=torch_dtype)
 
     if model_config.use_peft:
         peft_config = get_peft_config(model_config)
         policy = get_peft_model(policy, peft_config)
         ref_policy = None
     else:
-        ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
+        ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=torch_dtype)
 
     ################
     # Dataset

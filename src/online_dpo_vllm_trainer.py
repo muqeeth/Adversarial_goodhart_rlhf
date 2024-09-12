@@ -300,6 +300,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         )
 
         if accelerator.is_main_process:
+            vllm_dtype = next(model.parameters()).dtype
             vllm_device = args.vllm_device or f"cuda:{accelerator.num_processes}"
             response_ids_Q = queue.Queue(maxsize=1)
             param_prompt_Q = queue.Queue(maxsize=1)
@@ -309,6 +310,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     args.sft_model_path,
                     vllm_device,
                     args.vllm_gpu_memory_utilization,
+                    vllm_dtype,
                     generation_config,
                     response_ids_Q,
                     param_prompt_Q,
@@ -765,6 +767,7 @@ def vllm_generate(
     model_name_or_path: str,
     vllm_device: str,
     vllm_gpu_memory_utilization: float,
+    vllm_dtype: str,
     generation_config: SamplingParams,
     response_ids_Q: queue.Queue,
     param_prompt_Q: queue.Queue,
@@ -777,7 +780,7 @@ def vllm_generate(
         tokenizer_revision="main",
         tensor_parallel_size=1,
         device=vllm_device,
-        dtype=torch.float16,
+        dtype=vllm_dtype,
         gpu_memory_utilization=vllm_gpu_memory_utilization,
     )
     print("🔥🔥🔥 vllm loaded")

@@ -2,6 +2,7 @@ import multiprocessing
 import os
 from dataclasses import dataclass, field
 from typing import Optional
+import torch
 
 from accelerate import PartialState
 from datasets import load_dataset

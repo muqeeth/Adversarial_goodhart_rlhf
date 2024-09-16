@@ -2,8 +2,8 @@ import multiprocessing
 import os
 from dataclasses import dataclass, field
 from typing import Optional
-import torch
 
+import torch
 from accelerate import PartialState
 from datasets import load_dataset
 from peft import get_peft_model
@@ -89,7 +89,9 @@ if __name__ == "__main__":
         if model_config.torch_dtype in ["auto", None]
         else getattr(torch, model_config.torch_dtype)
     )
-    reward_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1, torch_dtype=torch_dtype)
+    reward_model = AutoModelForSequenceClassification.from_pretrained(
+        config.reward_model_path, num_labels=1, torch_dtype=torch_dtype
+    )
     policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=torch_dtype)
 
     if model_config.use_peft:

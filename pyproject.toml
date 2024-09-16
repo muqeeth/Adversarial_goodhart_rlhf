@@ -3,10 +3,6 @@ lint.ignore = ["E501", "E741", "W605"]
 lint.select = ["E", "F", "I", "W"]
 line-length = 119
 
-[tool.ruff.isort]
+[lint.isort]
 lines-after-imports = 2
 known-first-party = ["src"]
-
-[tool.pyright]
-include = ["utils"]
-exclude = ["results", "**/__pycache__"]

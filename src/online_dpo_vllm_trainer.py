@@ -298,12 +298,13 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         )
 
         if accelerator.is_main_process:
-            if args.fp16:
-                vllm_dtype = torch.float16
-            elif args.bf16:
-                vllm_dtype = torch.bfloat16
-            else:
-                vllm_dtype = torch.float32
+            # if args.fp16:
+            #     vllm_dtype = torch.float16
+            # elif args.bf16:
+            #     vllm_dtype = torch.bfloat16
+            # else:
+            #     vllm_dtype = torch.float32
+            vllm_dtype = next(model.parameters()).dtype
             vllm_device = args.vllm_device or f"cuda:{accelerator.num_processes}"
             response_ids_Q = queue.Queue(maxsize=1)
             param_prompt_Q = queue.Queue(maxsize=1)
@@ -386,22 +387,18 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     * queries.shape[0]
                 ]
 
-                # breakpoint()
-                # print("got responses1")
-                with torch.no_grad():
-                    context_length = queries.shape[1]
-                    query_responses = torch.cat((queries, local_vllm_responses), 1)
-                    logitss = []
-                    for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
-                        query = queries[i : i + args.local_rollout_forward_batch_size]
-                        query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
-                        output = forward(model, query_response, tokenizer.pad_token_id)
-                        logits = output.logits[:, context_length - 1 : -1]
-                        logitss.append(logits)
-                        del output
-                        torch.cuda.empty_cache()
+                context_length = queries.shape[1]
+                query_responses = torch.cat((queries, local_vllm_responses), 1)
+                logitss = []
+                for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
+                    query = queries[i : i + args.local_rollout_forward_batch_size]
+                    query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
+                    output = forward(model, query_response, tokenizer.pad_token_id)
+                    logits = output.logits[:, context_length - 1 : -1]
+                    logitss.append(logits)
+                    del output
+                    torch.cuda.empty_cache()
                 logitss = torch.cat(logitss, 0)
-                logits_time = time.time() - batch_start_time
 
                 responses = []
                 postprocessed_responses = []

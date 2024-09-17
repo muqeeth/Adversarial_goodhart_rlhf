@@ -59,7 +59,7 @@ class OnlineDPOVLLMConfig(OnlineDPOConfig):
     vllm: bool = False
     vllm_device: str = None
     "default will put it on accelerate.num_processes + 1"
-    vllm_gpu_memory_utilization: float = 0.8
+    vllm_gpu_memory_utilization: float = 0.9
 
 
 class OnlineDPOVLLMTrainer(RLOOTrainer):

@@ -298,13 +298,12 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         )
 
         if accelerator.is_main_process:
-            # if args.fp16:
-            #     vllm_dtype = torch.float16
-            # elif args.bf16:
-            #     vllm_dtype = torch.bfloat16
-            # else:
-            #     vllm_dtype = torch.float32
-            vllm_dtype = next(model.parameters()).dtype
+            if args.fp16:
+                vllm_dtype = torch.float16
+            elif args.bf16:
+                vllm_dtype = torch.bfloat16
+            else:
+                vllm_dtype = torch.float32
             vllm_device = args.vllm_device or f"cuda:{accelerator.num_processes}"
             response_ids_Q = queue.Queue(maxsize=1)
             param_prompt_Q = queue.Queue(maxsize=1)
@@ -751,7 +750,7 @@ def vllm_generate(
         dtype=vllm_dtype,
         gpu_memory_utilization=vllm_gpu_memory_utilization,
     )
-    print("🔥🔥🔥 vllm loaded")
+    print(f"🔥🔥🔥 vllm loaded in {vllm_dtype}")
     llmp = llm.llm_engine.model_executor.driver_worker.model_runner.model
     i = 0
     while True:

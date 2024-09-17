@@ -298,7 +298,12 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         )
 
         if accelerator.is_main_process:
-            vllm_dtype = next(model.parameters()).dtype
+            if args.fp16:
+                vllm_dtype = torch.float16
+            elif args.bf16:
+                vllm_dtype = torch.bfloat16
+            else:
+                vllm_dtype = torch.float32
             vllm_device = args.vllm_device or f"cuda:{accelerator.num_processes}"
             response_ids_Q = queue.Queue(maxsize=1)
             param_prompt_Q = queue.Queue(maxsize=1)
@@ -785,7 +790,7 @@ def vllm_generate(
         if i > 2:
             # print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
             llmp.load_weights(unwrapped_model.named_parameters())
-            # print(f"load weights took: {time.time() - start_time:.2f} seconds")
+            print(f"load weights took: {time.time() - start_time:.2f} seconds")
 
         outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=generation_config, use_tqdm=False)
         if i % logging_steps == 0:

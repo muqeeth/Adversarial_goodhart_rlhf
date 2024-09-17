@@ -361,10 +361,11 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                             [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id]
                             for item in g_queries_list
                         ]  # remove padding
-                        model_state_dict = accelerator.get_state_dict(unwrapped_model)
+                        # model_named_parameters = accelerator.get_named_parameters(model)
+
                         # send next queries to be generated
                         put_start_time = time.time()
-                        param_prompt_Q.put((model_state_dict, g_queries_list))
+                        param_prompt_Q.put((unwrapped_model, g_queries_list))
                         put_time = time.time() - put_start_time
 
                         # get response for previous queries
@@ -374,7 +375,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                         DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
                         g_padded_response_ids = [
-                            response.tolist() + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
+                            list(response) + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
                             for response in g_response_ids
                         ]
                         g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
@@ -752,22 +753,22 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 wandb.log({"completions": wandb.Table(dataframe=df)})
 
 
-def state_dict_to_named_parameters(state_dict):
-    # Create an OrderedDict to maintain the order of parameters
-    params = OrderedDict()
-
-    for name, param in state_dict.items():
-        # Convert the parameter tensor to a nn.Parameter
-        params[name] = torch.nn.Parameter(param)
-
-    # Create a generator that yields (name, parameter) tuples
-    def named_parameters():
-        for name, param in params.items():
-            yield name, param
-
-    return named_parameters
-
-
+# def state_dict_to_named_parameters(state_dict):
+#     # Create an OrderedDict to maintain the order of parameters
+#     params = OrderedDict()
+#
+#     for name, param in state_dict.items():
+#         # Convert the parameter tensor to a nn.Parameter
+#         params[name] = torch.nn.Parameter(param)
+#
+#     # Create a generator that yields (name, parameter) tuples
+#     def named_parameters():
+#         for name, param in params.items():
+#             yield name, param
+#
+#     return named_parameters
+#
+#
 def vllm_generate(
     model_name_or_path: str,
     vllm_device: str,
@@ -793,16 +794,20 @@ def vllm_generate(
     i = 0
     while True:
         i += 1
-        model_state_dict, g_queries_list = param_prompt_Q.get()
+        # model_named_parameters, g_queries_list = param_prompt_Q.get()
+        unwrapped_model, g_queries_list = param_prompt_Q.get()
         # print("got queries==================")
-        if model_state_dict is None and g_queries_list is None:
+        if unwrapped_model is None and g_queries_list is None:
+            # if model_named_parameters is None and g_queries_list is None:
             print("model params and queries are None, exiting")
             break
 
         start_time = time.time()
         if i > 2:
             # print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
-            llmp.load_weights(state_dict_to_named_parameters(model_state_dict))
+            # llmp.load_weights(state_dict_to_named_parameters(model_state_dict))
+            llmp.load_weights(unwrapped_model.named_parameters())
+            # llmp.load_weights(model_named_parameters)
             print(f"load weights took: {time.time() - start_time:.2f} seconds")
 
         outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=generation_config, use_tqdm=False)

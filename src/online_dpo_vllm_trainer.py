@@ -390,20 +390,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                 context_length = queries.shape[1]
                 query_responses = torch.cat((queries, local_vllm_responses), 1)
-                logitss = []
-                for i in range(0, queries.shape[0], args.local_rollout_forward_batch_size):
-                    query = queries[i : i + args.local_rollout_forward_batch_size]
-                    query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
-                    output = forward(model, query_response, tokenizer.pad_token_id)
-                    logits = output.logits[:, context_length - 1 : -1]
-                    logitss.append(logits)
-                    del output
-                    torch.cuda.empty_cache()
-                logitss = torch.cat(logitss, 0)
-
                 responses = []
                 postprocessed_responses = []
-                logprobs = []
+                # logprobs = []
                 ref_logprobs = []
                 scores = []
                 sequence_lengths = []
@@ -412,12 +401,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     query = queries[i : i + args.local_rollout_forward_batch_size]
                     query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
                     response = query_response[:, context_length:]
-                    logits = logitss[i : i + args.local_rollout_forward_batch_size]
-                    logits /= args.temperature + 1e-7
-                    all_logprob = F.log_softmax(logits, dim=-1)
-                    logprob = torch.gather(all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
-                    del logits, all_logprob
-                    torch.cuda.empty_cache()
 
                     if ref_policy is not None:
                         ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
@@ -445,23 +428,18 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                         reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
                     )
 
-                    # query_responses.append(query_response)
                     responses.append(response)
                     postprocessed_responses.append(postprocessed_response)
-                    logprobs.append(logprob)
                     ref_logprobs.append(ref_logprob)
                     sequence_lengths.append(sequence_length)
                     scores.append(score)
 
                 ref_and_reward_time = time.time() - ref_and_reward_start
-                # query_responses = torch.cat(query_responses, 0)
                 responses = torch.cat(responses, 0)
-                logprobs = torch.cat(logprobs, 0)
                 ref_logprobs = torch.cat(ref_logprobs, 0)
                 postprocessed_responses = torch.cat(postprocessed_responses, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 scores = torch.cat(scores, 0)
-                # del (logprob, ref_logprob, score)
                 gc.collect()
                 torch.cuda.empty_cache()
 
@@ -476,12 +454,12 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 # be very careful with `padding_mask_p1`; see https://excalidraw.com/#json=LWnzG4w2k5DjF_EOL_xPt,e2w3a-hFJ_gX5vOfeyXGTw
                 response_idxs = torch.arange(responses.shape[1], device=responses.device).repeat(responses.shape[0], 1)
                 padding_mask = response_idxs > sequence_lengths.unsqueeze(1)
-                logprobs = torch.masked_fill(logprobs, padding_mask, INVALID_LOGPROB)
                 ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
 
-                kl = logprobs - ref_logprobs
-                non_score_reward = (-args.kl_coef * kl).sum(1)
-                rlhf_reward = scores + non_score_reward
+                # kl = logprobs - ref_logprobs
+                # non_score_reward = (-args.kl_coef * kl).sum(1)
+                # rlhf_reward = scores + non_score_reward
+                rlhf_reward = scores
 
                 # num_examples should be same as args.local_batch_size
                 num_examples = scores.size(0) // 2
@@ -635,9 +613,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             all_rejected_logprobs = torch.cat(all_rejected_logprobs, 0)
 
             with torch.no_grad():
-                mean_kl = kl.sum(1).mean()
-                mean_entropy = (-logprobs).sum(1).mean()
-                mean_non_score_reward = non_score_reward.mean()
+                # mean_kl = kl.sum(1).mean()
+                # mean_entropy = (-logprobs).sum(1).mean()
+                # mean_non_score_reward = non_score_reward.mean()
                 eps = int(self.state.episode / (time.time() - start_time))
                 # policy_chosen_logps = logprobs[chosen_indices]
                 # policy_rejected_logps = logprobs[rejected_indices]
@@ -649,9 +627,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                 metrics = {}
                 metrics["eps"] = eps
-                metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()
-                metrics["objective/entropy"] = self.accelerator.gather(mean_entropy).mean().item()
-                metrics["objective/non_score_reward"] = self.accelerator.gather(mean_non_score_reward).mean().item()
+                # metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()
+                # metrics["objective/entropy"] = self.accelerator.gather(mean_entropy).mean().item()
+                # metrics["objective/non_score_reward"] = self.accelerator.gather(mean_non_score_reward).mean().item()
                 metrics["objective/rlhf_reward"] = self.accelerator.gather(rlhf_reward).mean().item()
                 metrics["objective/scores"] = self.accelerator.gather(scores.mean()).mean().item()
                 metrics["objective/scores_margin"] = self.accelerator.gather(scores_margin.mean()).mean().item()
@@ -670,9 +648,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 self.state.epoch = self.state.episode / self.train_dataset_len  # used by self.log
                 self.log(metrics)
             del (
-                kl,
-                mean_kl,
-                mean_entropy,
+                # kl,
+                # mean_kl,
+                # mean_entropy,
                 scores,
                 scores_margin,
                 all_chosen_rewards,

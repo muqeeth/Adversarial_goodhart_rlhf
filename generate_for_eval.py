@@ -6,26 +6,22 @@ from typing import List, Optional
 
 import ray
 import torch
-from datasets import builder, load_dataset
+import vllm
+from datasets import load_dataset
+from packaging.version import Version
 from peft import PeftModelForCausalLM
 from transformers import (
     AutoModelForCausalLM,
 )
 from vllm import LLM, SamplingParams
 
-# from vllm.distributed.parallel_state import destroy_model_parallel
-from vllm.model_executor.parallel_utils.parallel_state import destroy_model_parallel
-
 from src.utils import TRLParser
-
-
-builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 
 @dataclass
 class GenerateScriptArguments:
     save_generations: Optional[bool] = field(
-        default=True,
+        default=False,
         metadata={"help": "output folder"},
     )
     num_gpus: int = int(os.environ.get("NPROC", 1))
@@ -106,7 +102,6 @@ def generate(script_args):
             dtype=script_args.gen_dtype,
             trust_remote_code=True,
             tensor_parallel_size=tensor_parallel_size,
-            gpu_memory_utilization=0.75,
         )
 
         generations = llm.generate(prompts, sampling_params)
@@ -158,14 +153,19 @@ def generate(script_args):
 
 if __name__ == "__main__":
     parser = TRLParser([GenerateScriptArguments])
-    generate_args = parser.parse_args_and_config()[0]
+    args = parser.parse_args_and_config()[0]
 
-    if generate_args.sanity_check:
-        checkpoint_subfolders = [
-            path for path in os.listdir(generate_args.model_name_or_path) if path.startswith("checkpoint")
-        ]
-        generate_args.model_paths = checkpoint_subfolders[:2]
-        generate_args.split = generate_args.split + "[:100]"
+    if Version(vllm.__version__) > Version("0.4.1"):
+        if args.num_gpus > 1:
+            raise NotImplementedError("haven't implemented multigpu with vllm > 0.4.1")
+
+        from vllm.distributed.parallel_state import destroy_model_parallel
+    else:
+        from vllm.model_executor.parallel_utils.parallel_state import destroy_model_parallel
+
+    if args.sanity_check:
+        checkpoint_subfolders = [path for path in os.listdir(args.model_name_or_path) if path.startswith("checkpoint")]
+        args.model_paths = checkpoint_subfolders[:2]
 
     print("GENERATING")
-    generate(generate_args)
+    generate(args)

@@ -192,7 +192,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
         self.hub_model_id = None
         if self.args.push_to_hub:
             self.init_hf_repo()
-        if self.args.should_save:
+        if self.args.should_save and self.args.save_strategy != "no":
             os.makedirs(self.args.output_dir, exist_ok=True)
 
         self.backup_model = None

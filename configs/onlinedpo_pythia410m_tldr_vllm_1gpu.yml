@@ -35,4 +35,4 @@ save_steps: 0.25
 hub_strategy: all_checkpoints
 logging_steps: 100
 num_sample_generations: 5
-save_generations: True
+save_generations: False

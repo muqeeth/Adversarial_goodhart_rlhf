@@ -1,10 +1,8 @@
 import gc
 import math
 import os
-import queue
-import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -14,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from accelerate.utils import broadcast, gather_object
+from accelerate.utils import gather_object
 from datasets import Dataset
 from peft import PeftModel
 from torch.utils.data import DataLoader
@@ -45,7 +43,6 @@ from vllm import LLM, SamplingParams
 
 from src.online_dpo_trainer import OnlineDPOConfig
 from src.utils import prepare_deepspeed
-from src.vllm_utils import vllm_single_gpu_patch
 
 
 @dataclass
@@ -62,7 +59,7 @@ class OnlineDPOVLLMConfig(OnlineDPOConfig):
     vllm_gpu_memory_utilization: float = 0.9
 
 
-class OnlineDPOVLLMTrainer(RLOOTrainer):
+class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
     def __init__(
         self,
         config: OnlineDPOVLLMConfig,
@@ -287,10 +284,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             else:
                 self.state.save_steps = args.save_steps
 
-        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "batch_num": []}
 
-        generation_config = SamplingParams(
+        sampling_params = SamplingParams(
             temperature=(args.temperature + 1e-7),
             top_p=1.0,
             max_tokens=args.response_length,
@@ -305,22 +301,16 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             else:
                 vllm_dtype = torch.float32
             vllm_device = args.vllm_device or f"cuda:{accelerator.num_processes}"
-            response_ids_Q = queue.Queue(maxsize=1)
-            param_prompt_Q = queue.Queue(maxsize=1)
-            thread = threading.Thread(
-                target=vllm_generate,
-                args=(
-                    args.sft_model_path,
-                    vllm_device,
-                    args.vllm_gpu_memory_utilization,
-                    vllm_dtype,
-                    generation_config,
-                    response_ids_Q,
-                    param_prompt_Q,
-                    self.state.logging_steps,
-                ),
+            llm = LLM(
+                model=args.sft_model_path,
+                revision="main",
+                tokenizer_revision="main",
+                tensor_parallel_size=1,
+                device=vllm_device,
+                dtype=vllm_dtype,
+                gpu_memory_utilization=args.vllm_gpu_memory_utilization,
             )
-            thread.start()
+            accelerator.print(f"🔥🔥🔥 vllm loaded in {vllm_dtype}")
 
         if self.args.sync:
             next_queries = None
@@ -334,10 +324,10 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 g_queries_list = [
                     [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id] for item in g_queries_list
                 ]  # remove padding
-                param_prompt_Q.put((None, g_queries_list))
+                next_g_response_ids = vllm_generate(llm, sampling_params, None, g_queries_list, True)
 
+        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for batch_num in range(1, self.num_batches + 1):
-            queries = next_queries
             self.state.episode += 1 * args.batch_size
             self.lr_scheduler.step()
             data = next(iter_dataloader)
@@ -346,6 +336,16 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 device=accelerator.device,
                 dtype=torch.long,
             )
+            queries = next_queries
+            g_response_ids = next_g_response_ids
+            DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
+            g_padded_response_ids = [
+                list(response) + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
+                for response in g_response_ids
+            ]
+            g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
+            vllm_responses[:] = g_padded_response_ids
+            batch_start_time = time.time()
             with torch.no_grad():
                 next_queries = data["input_ids"].to(device)
                 next_queries = next_queries.repeat(args.rloo_k, 1)
@@ -354,34 +354,23 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     queries = next_queries
 
                 # with unwrap_model_for_generation(model, self.accelerator) as unwrapped_model:
-                g_queries_list = gather_object(next_queries.tolist())
+                next_g_queries_list = gather_object(next_queries.tolist())
                 if accelerator.is_main_process:
-                    g_queries_list = [
+                    next_g_queries_list = [
                         [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id]
-                        for item in g_queries_list
+                        for item in next_g_queries_list
                     ]  # remove padding
 
                     # send next queries to be generated
                     model_named_parameters = accelerator._get_named_parameters(model)
-                    put_start_time = time.time()
-                    param_prompt_Q.put((model_named_parameters.items(), g_queries_list))
-                    put_time = time.time() - put_start_time
+                    next_g_response_ids = vllm_generate(
+                        llm,
+                        sampling_params,
+                        model_named_parameters.items(),
+                        g_queries_list,
+                        log=(batch_num % self.state.logging_steps == 0),
+                    )
 
-                    # get response for previous queries
-                    get_start_time = time.time()
-                    g_response_ids = response_ids_Q.get()
-                    get_time = time.time() - get_start_time
-
-                    DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
-                    g_padded_response_ids = [
-                        list(response) + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
-                        for response in g_response_ids
-                    ]
-                    g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
-                    vllm_responses[:] = g_padded_response_ids
-
-                batch_start_time = time.time()
-                broadcast(vllm_responses, 0)
                 local_vllm_responses = vllm_responses[
                     accelerator.local_process_index * queries.shape[0] : (accelerator.local_process_index + 1)
                     * queries.shape[0]
@@ -668,10 +657,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             if batch_num % self.state.logging_steps == 0:
                 accelerator.print(f"🙆🙆🙆 total training thread took {total_time:.2f}")
 
-        if accelerator.is_main_process:
-            param_prompt_Q.put((None, None))  # end thread
-            thread.join()
-
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
         if self.control.should_save:
             self._save_checkpoint(model, trial=None, metrics=None)
@@ -730,50 +715,26 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 wandb.log({"completions": wandb.Table(dataframe=df)})
 
 
-def vllm_generate(
-    model_name_or_path: str,
-    vllm_device: str,
-    vllm_gpu_memory_utilization: float,
-    vllm_dtype: str,
-    generation_config: SamplingParams,
-    response_ids_Q: queue.Queue,
-    param_prompt_Q: queue.Queue,
-    logging_steps: int,
-):
-    vllm_single_gpu_patch()
-    llm = LLM(
-        model=model_name_or_path,
-        revision="main",
-        tokenizer_revision="main",
-        tensor_parallel_size=1,
-        device=vllm_device,
-        dtype=vllm_dtype,
-        gpu_memory_utilization=vllm_gpu_memory_utilization,
-    )
-    print("🔥🔥🔥 vllm loaded")
+def vllm_generate(llm, sampling_params, model_named_parameters, g_queries_list, log=False):
     llmp = llm.llm_engine.model_executor.driver_worker.model_runner.model
-    i = 0
-    while True:
-        i += 1
-        model_named_parameters, g_queries_list = param_prompt_Q.get()
-        # print("got queries==================")
-        if model_named_parameters is None and g_queries_list is None:
-            print("model params and queries are None, exiting")
-            break
+    if model_named_parameters is None and g_queries_list is None:
+        print("model params and queries are None, exiting")
+        return
 
-        vllm_start_time = time.time()
-        if i > 2:
-            # print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
-            llmp.load_weights(model_named_parameters)
-            print(f"load weights took: {time.time() - vllm_start_time:.2f} seconds")
+    vllm_start_time = time.time()
+    if model_named_parameters:
+        # print("🔥🔥🔥 Loading weights using shared memory;" "we expect the generations to be completely different")
+        llmp.load_weights(model_named_parameters)
+        # if log:
+        #     print(f"load weights took: {time.time() - vllm_start_time:.2f} seconds")
 
-        outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=generation_config, use_tqdm=False)
-        if i % logging_steps == 0:
-            print(
-                f"🏃🏃🏃 load and gen of {len(g_queries_list)} prompts took: {time.time() - vllm_start_time:.2f} seconds"
-            )
-        response_token_ids = []
-        for output in outputs:
-            response_token_ids.append(output.outputs[0].token_ids)
+    outputs = llm.generate(prompt_token_ids=g_queries_list, sampling_params=sampling_params, use_tqdm=False)
+    if log:
+        print(
+            f"🏃🏃🏃 load and gen of {len(g_queries_list)} prompts took: {time.time() - vllm_start_time:.2f} seconds"
+        )
+    response_token_ids = []
+    for output in outputs:
+        response_token_ids.append(output.outputs[0].token_ids)
 
-        response_ids_Q.put(response_token_ids)
+    return response_token_ids

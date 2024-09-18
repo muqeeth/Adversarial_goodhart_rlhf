@@ -15,6 +15,7 @@ from transformers import (
 from trl import ModelConfig
 from trl.trainer.utils import get_peft_config
 
+from src.online_dpo_single_vllm_trainer import OnlineDPOSingleVLLMTrainer
 from src.online_dpo_trainer import OnlineDPOConfig, OnlineDPOTrainer
 from src.online_dpo_vllm_trainer import OnlineDPOVLLMConfig, OnlineDPOVLLMTrainer
 from src.utils import TRLParser, WandbLogModelConfig
@@ -36,6 +37,7 @@ class ScriptArguments:
     """currently badly named but the cluster, either slurm or snow
     if slurm then it saves under global parent dir / slurm job id / config_name
     """
+    single: bool = field(default=False)
 
 
 def prepare_dataset(dataset, tokenizer):
@@ -132,7 +134,9 @@ if __name__ == "__main__":
     # Training
     ################
 
-    if config.vllm:
+    if config.vllm and args.single:
+        TrainerCls = OnlineDPOSingleVLLMTrainer
+    elif config.vllm:
         TrainerCls = OnlineDPOVLLMTrainer
     else:
         TrainerCls = OnlineDPOTrainer

@@ -16,7 +16,7 @@ from trl import ModelConfig
 from trl.trainer.utils import get_peft_config
 
 from src.online_dpo_single_vllm_trainer import OnlineDPOSingleVLLMTrainer
-from src.online_dpo_trainer import OnlineDPOConfig, OnlineDPOTrainer
+from src.online_dpo_trainer import OnlineDPOTrainer
 from src.online_dpo_vllm_trainer import OnlineDPOVLLMConfig, OnlineDPOVLLMTrainer
 from src.utils import TRLParser, WandbLogModelConfig
 
@@ -94,7 +94,9 @@ if __name__ == "__main__":
     reward_model = AutoModelForSequenceClassification.from_pretrained(
         config.reward_model_path, num_labels=1, torch_dtype=torch_dtype
     )
-    policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=torch_dtype)
+    # fp16 is mixed precision and only the inference models (reward and ref) can have fp16 dtype
+    policy_dtype = torch_dtype if not torch.float16 else "auto"
+    policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=policy_dtype)
 
     if model_config.use_peft:
         peft_config = get_peft_config(model_config)

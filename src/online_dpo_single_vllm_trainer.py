@@ -395,9 +395,9 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                     ref_logprob = torch.gather(ref_all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
                     ref_logprobs.append(ref_logprob)
 
-                del ref_output, ref_logits, ref_all_logprob
-                gc.collect()
-                torch.cuda.empty_cache()
+                # del ref_output, ref_logits, ref_all_logprob
+                # gc.collect()
+                # torch.cuda.empty_cache()
                 # print(f"refern time is {time.time() - ref_start_time}")
 
                 responses = []
@@ -437,6 +437,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 scores = torch.cat(scores, 0)
                 del postprocessed_query_response
+                del ref_output, ref_logits, ref_all_logprob
                 gc.collect()
                 torch.cuda.empty_cache()
 

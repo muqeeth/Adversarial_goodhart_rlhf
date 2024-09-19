@@ -319,12 +319,13 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
             data = next(iter_dataloader)
             next_queries = data["input_ids"].to(device)
             next_queries = next_queries.repeat(args.rloo_k, 1)
-            g_queries_list = gather_object(next_queries.tolist())
+            next_g_queries_list = gather_object(next_queries.tolist())
             if accelerator.is_main_process:
-                g_queries_list = [
-                    [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id] for item in g_queries_list
+                next_g_queries_list = [
+                    [inneritem for inneritem in item if inneritem != tokenizer.pad_token_id]
+                    for item in next_g_queries_list
                 ]  # remove padding
-                next_g_response_ids = vllm_generate(llm, sampling_params, None, g_queries_list, True)
+                next_g_response_ids = vllm_generate(llm, sampling_params, None, next_g_queries_list, True)
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for batch_num in range(1, self.num_batches + 1):
@@ -367,7 +368,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                         llm,
                         sampling_params,
                         model_named_parameters.items(),
-                        g_queries_list,
+                        next_g_queries_list,
                         log=(batch_num % self.state.logging_steps == 0),
                     )
 
@@ -390,6 +391,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                     query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
                     response = query_response[:, context_length:]
 
+                    ref_start_time = time.time()
                     if ref_policy is not None:
                         ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
                     else:
@@ -400,7 +402,9 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                     ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
                     ref_logprob = torch.gather(ref_all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
                     del ref_output, ref_logits, ref_all_logprob
+                    gc.collect()
                     torch.cuda.empty_cache()
+                    # print(f"ref time is {time.time() - ref_start_time}")
 
                     # Response Processing 1. truncate response after the first occurrence of `stop_token_id`
                     postprocessed_response = response
@@ -412,9 +416,11 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                     # Response Processing 2. run reward model on the truncated responses
                     postprocessed_query_response = torch.cat((query, postprocessed_response), 1)
                     sequence_length = first_true_indices(postprocessed_response == tokenizer.pad_token_id) - 1
+                    reward_start_time = time.time()
                     _, score, _ = get_reward(
                         reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
                     )
+                    # print(f"reward time is {time.time() - reward_start_time}")
 
                     responses.append(response)
                     postprocessed_responses.append(postprocessed_response)
@@ -428,9 +434,12 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 postprocessed_responses = torch.cat(postprocessed_responses, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 scores = torch.cat(scores, 0)
+                # del ref_output, ref_logits, ref_all_logprob
                 gc.collect()
                 torch.cuda.empty_cache()
 
+                if batch_num % self.state.logging_steps == 0:
+                    accelerator.print(f"🏋️🏋️🏋️ ref and reward inference took {ref_and_reward_time:.2f}")
                 # Response Processing 3. filter response. Ensure that the sample contains stop_token_id
                 # responses not passing that filter will receive a low (fixed) score
                 # only query humans on responses that pass that filter
@@ -478,8 +487,6 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                     saved_data["chosen"].extend(gather_object(decoded_chosen))
                     saved_data["rejected"].extend(gather_object(decoded_rejected))
                     saved_data["batch_num"].extend(gather_object([batch_num for _ in range(num_examples)]))
-
-                torch.cuda.empty_cache()
 
             # Do multiple epochs of PPO training, with a fresh random shuffle in each epoch
             train_start_time = time.time()
@@ -593,7 +600,6 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
 
             train_time = time.time() - train_start_time
             if batch_num % self.state.logging_steps == 0:
-                accelerator.print(f"🏋️🏋️🏋️ ref and reward inference took {ref_and_reward_time:.2f}")
                 accelerator.print(f"🏋️🏋️🏋️ training took {train_time:.2f}")
             all_chosen_rewards = torch.cat(all_chosen_rewards, 0)
             all_rejected_rewards = torch.cat(all_rejected_rewards, 0)
@@ -647,8 +653,8 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 all_rejected_logprobs,
             )
 
-            torch.cuda.empty_cache()
             gc.collect()
+            torch.cuda.empty_cache()
 
             if args.num_sample_generations > 0 and (batch_num - 1) % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)

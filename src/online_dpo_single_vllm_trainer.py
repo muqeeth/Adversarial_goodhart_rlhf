@@ -456,11 +456,6 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 padding_mask = response_idxs > sequence_lengths.unsqueeze(1)
                 ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
 
-                # kl = logprobs - ref_logprobs
-                # non_score_reward = (-args.kl_coef * kl).sum(1)
-                # rlhf_reward = scores + non_score_reward
-                rlhf_reward = scores
-
                 # num_examples should be same as args.local_batch_size
                 num_examples = scores.size(0) // 2
                 first_half = scores[:num_examples]
@@ -502,6 +497,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 all_rejected_rewards = []
                 all_chosen_logprobs = []
                 all_rejected_logprobs = []
+                all_kls = []
                 for mini_batch_start in range(0, args.local_batch_size, args.local_mini_batch_size):
                     mini_batch_end = mini_batch_start + args.local_mini_batch_size
                     mini_batch_inds = b_inds[mini_batch_start:mini_batch_end]
@@ -582,6 +578,14 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                             all_chosen_logprobs.append(chosen_logprobs_sum)
                             all_rejected_rewards.append(rejected_rewards)
                             all_rejected_logprobs.append(rejected_logprobs_sum)
+
+                            # kl calculation
+                            kl = (
+                                ((chosen_logprobs - chosen_ref_logprobs) + (rejected_logprobs + rejected_ref_logprobs))
+                                .sum(1)
+                                .detach()
+                            )
+                            all_kls.append(kl)
                             #     entropy_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = entropy.mean()
                             #     ratio_stats[ppo_epoch_idx, minibatch_idx, gradient_accumulation_idx] = new_ratio.mean()
                         gradient_accumulation_idx += 1
@@ -613,11 +617,10 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
             all_rejected_rewards = torch.cat(all_rejected_rewards, 0)
             all_chosen_logprobs = torch.cat(all_chosen_logprobs, 0)
             all_rejected_logprobs = torch.cat(all_rejected_logprobs, 0)
+            all_kls = torch.cat(all_kls, 0)
 
             with torch.no_grad():
-                # mean_kl = kl.sum(1).mean()
                 # mean_entropy = (-logprobs).sum(1).mean()
-                # mean_non_score_reward = non_score_reward.mean()
                 eps = int(self.state.episode / (time.time() - start_time))
                 # policy_chosen_logps = logprobs[chosen_indices]
                 # policy_rejected_logps = logprobs[rejected_indices]
@@ -627,13 +630,17 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 rejected_rewards = self.accelerator.gather(all_rejected_rewards)
                 rejected_logprobs = self.accelerator.gather(all_rejected_logprobs)
 
+                mean_scores = self.accelerator.gather(scores.mean()).mean().item()
+                mean_kl = self.accelerator.gather(all_kls.mean()).mean().item()
+                mean_rlhf_reward = mean_scores + args.kl_coef * mean_kl
+
                 metrics = {}
                 metrics["eps"] = eps
-                # metrics["objective/kl"] = self.accelerator.gather(mean_kl).mean().item()
+                metrics["objective/kl"] = mean_kl
                 # metrics["objective/entropy"] = self.accelerator.gather(mean_entropy).mean().item()
-                # metrics["objective/non_score_reward"] = self.accelerator.gather(mean_non_score_reward).mean().item()
-                metrics["objective/rlhf_reward"] = self.accelerator.gather(rlhf_reward).mean().item()
-                metrics["objective/scores"] = self.accelerator.gather(scores.mean()).mean().item()
+                # metrics["objective/non_score_reward"] = mean_non_score_reward).mean().item()
+                metrics["objective/rlhf_reward"] = mean_rlhf_reward
+                metrics["objective/scores"] = mean_scores
                 metrics["objective/scores_margin"] = self.accelerator.gather(scores_margin.mean()).mean().item()
                 metrics["rewards/chosen"] = chosen_rewards.mean().item()
                 metrics["rewards/rejected"] = rejected_rewards.mean().item()

@@ -7,6 +7,9 @@ dataset_test_split: validation
 max_length: 512
 ##
 vllm: True
+# bf16
+bf16: True
+torch_dtype: bfloat16
 ## online dpo stuff
 loss_type: sigmoid
 ## ppo stuff

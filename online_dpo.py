@@ -162,7 +162,6 @@ if __name__ == "__main__":
             if PartialState().is_main_process and model_config.use_peft:
                 model = trainer.policy.merge_and_unload()
                 model.push_to_hub(config.hub_model_id)
-        trainer.generate_completions()
 
         if trainer.accelerator.is_main_process:
             try:

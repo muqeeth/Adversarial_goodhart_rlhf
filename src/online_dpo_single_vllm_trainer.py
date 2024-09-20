@@ -237,7 +237,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
 
         self.ref_model = self.ref_policy
 
-    def train(self):
+    def train(self, resume_from_checkpoint=None):
         args = self.args
         accelerator = self.accelerator
         optimizer = self.optimizer
@@ -671,7 +671,7 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
             gc.collect()
             torch.cuda.empty_cache()
 
-            if args.num_sample_generations > 0 and (batch_num - 1) % self.sample_generations_freq == 0:
+            if args.num_sample_generations > 0 and batch_num % self.sample_generations_freq == 0:
                 self.generate_completions(sampling=True)
 
             total_time = time.time() - batch_start_time

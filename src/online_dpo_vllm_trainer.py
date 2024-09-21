@@ -141,7 +141,8 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         if args.num_sample_generations > 0:
             self.sample_generations_freq = max(1, self.num_batches // args.num_sample_generations)
 
-        assert args.rloo_k == 2, "currently only support 2"
+        # assert args.rloo_k == 2, "currently only support 2"
+        assert args.rloo_k >= 2
         self.local_dataloader_batch_size = args.local_batch_size
         # self.local_dataloader_batch_size = exact_div(
         #     args.local_batch_size,
@@ -405,7 +406,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
                     ref_logprob = torch.gather(ref_all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
                     del ref_output, ref_logits, ref_all_logprob
-                    torch.cuda.empty_cache()
 
                     # Response Processing 1. truncate response after the first occurrence of `stop_token_id`
                     postprocessed_response = response
@@ -420,6 +420,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     _, score, _ = get_reward(
                         reward_model, postprocessed_query_response, tokenizer.pad_token_id, context_length
                     )
+                    del postprocessed_query_response
 
                     responses.append(response)
                     postprocessed_responses.append(postprocessed_response)
@@ -455,20 +456,22 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 rlhf_reward = scores
 
                 # num_examples should be same as args.local_batch_size
-                num_examples = scores.size(0) // 2
-                first_half = scores[:num_examples]
-                second_half = scores[num_examples:]
+                num_examples = scores.size(0) // args.rloo_k
+                scores_reshaped = scores.reshape(args.rloo_k, num_examples).t()
 
-                num_examples_range = torch.arange(num_examples).to(scores.device)
+                # Get the max scores and their local indices
+                chosen_scores, chosen_local_indices = torch.max(scores_reshaped, dim=1)
 
-                chosen_indices = torch.where(
-                    first_half >= second_half, num_examples_range.clone(), num_examples_range.clone() + num_examples
+                # Get the min scores and their local indices
+                rejected_scores, rejected_local_indices = torch.min(scores_reshaped, dim=1)
+
+                scores_margin = chosen_scores - rejected_scores
+
+                # Calculate the global indices
+                chosen_indices = chosen_local_indices * num_examples + torch.arange(num_examples, device=scores.device)
+                rejected_indices = rejected_local_indices * num_examples + torch.arange(
+                    num_examples, device=scores.device
                 )
-                rejected_indices = torch.where(
-                    first_half < second_half, num_examples_range.clone(), num_examples_range.clone() + num_examples
-                )
-
-                scores_margin = scores[chosen_indices] - scores[rejected_indices]
 
                 if self.args.save_generations:
                     decoded_queries = tokenizer.batch_decode(queries[:num_examples], skip_special_tokens=True)

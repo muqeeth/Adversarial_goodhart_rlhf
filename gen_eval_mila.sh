@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=trl_summarize
+#SBATCH --job-name=trl_summarize_eval
 #SBATCH --output=logs/%j/job_output.txt
 #SBATCH --error=logs/%j/job_error.txt
 #SBATCH --time=8:00:00

@@ -4,7 +4,7 @@ import os
 import queue
 import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -360,12 +360,12 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     model_named_parameters = accelerator._get_named_parameters(model)
                     put_start_time = time.time()
                     param_prompt_Q.put((model_named_parameters.items(), g_queries_list))
-                    put_time = time.time() - put_start_time
+                    # put_time = time.time() - put_start_time
 
                     # get response for previous queries
                     get_start_time = time.time()
                     g_response_ids = response_ids_Q.get()
-                    get_time = time.time() - get_start_time
+                    # get_time = time.time() - get_start_time
 
                     DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
                     g_padded_response_ids = [
@@ -387,7 +387,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 responses = []
                 postprocessed_responses = []
                 # logprobs = []
-                ref_logprobs = []
+                # ref_logprobs = []
                 scores = []
                 sequence_lengths = []
                 ref_and_reward_start = time.time()
@@ -395,17 +395,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     query = queries[i : i + args.local_rollout_forward_batch_size]
                     query_response = query_responses[i : i + args.local_rollout_forward_batch_size]
                     response = query_response[:, context_length:]
-
-                    if ref_policy is not None:
-                        ref_output = forward(ref_policy, query_response, tokenizer.pad_token_id)
-                    else:
-                        with self.accelerator.unwrap_model(model).disable_adapter():
-                            ref_output = forward(model, query_response, tokenizer.pad_token_id)
-                    ref_logits = ref_output.logits[:, context_length - 1 : -1]
-                    ref_logits /= args.temperature + 1e-7
-                    ref_all_logprob = F.log_softmax(ref_logits, dim=-1)
-                    ref_logprob = torch.gather(ref_all_logprob, 2, response.unsqueeze(-1)).squeeze(-1)
-                    del ref_output, ref_logits, ref_all_logprob
 
                     # Response Processing 1. truncate response after the first occurrence of `stop_token_id`
                     postprocessed_response = response
@@ -424,18 +413,16 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                     responses.append(response)
                     postprocessed_responses.append(postprocessed_response)
-                    ref_logprobs.append(ref_logprob)
+                    # ref_logprobs.append(ref_logprob)
                     sequence_lengths.append(sequence_length)
                     scores.append(score)
 
                 ref_and_reward_time = time.time() - ref_and_reward_start
                 responses = torch.cat(responses, 0)
-                ref_logprobs = torch.cat(ref_logprobs, 0)
+                # ref_logprobs = torch.cat(ref_logprobs, 0)
                 postprocessed_responses = torch.cat(postprocessed_responses, 0)
                 sequence_lengths = torch.cat(sequence_lengths, 0)
                 scores = torch.cat(scores, 0)
-                gc.collect()
-                torch.cuda.empty_cache()
 
                 # Response Processing 3. filter response. Ensure that the sample contains stop_token_id
                 # responses not passing that filter will receive a low (fixed) score
@@ -448,7 +435,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 # be very careful with `padding_mask_p1`; see https://excalidraw.com/#json=LWnzG4w2k5DjF_EOL_xPt,e2w3a-hFJ_gX5vOfeyXGTw
                 response_idxs = torch.arange(responses.shape[1], device=responses.device).repeat(responses.shape[0], 1)
                 padding_mask = response_idxs > sequence_lengths.unsqueeze(1)
-                ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
+                # ref_logprobs = torch.masked_fill(ref_logprobs, padding_mask, INVALID_LOGPROB)
 
                 # kl = logprobs - ref_logprobs
                 # non_score_reward = (-args.kl_coef * kl).sum(1)
@@ -487,6 +474,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     saved_data["rejected"].extend(gather_object(decoded_rejected))
                     saved_data["batch_num"].extend(gather_object([batch_num for _ in range(num_examples)]))
 
+                gc.collect()
                 torch.cuda.empty_cache()
 
             # Do multiple epochs of PPO training, with a fresh random shuffle in each epoch
@@ -503,23 +491,55 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     mini_batch_inds = b_inds[mini_batch_start:mini_batch_end]
                     gradient_accumulation_idx = 0
                     for micro_batch_start in range(0, args.local_mini_batch_size, args.per_device_train_batch_size):
+                        micro_batch_end = micro_batch_start + args.per_device_train_batch_size
+                        micro_batch_inds = mini_batch_inds[micro_batch_start:micro_batch_end]
+
+                        ## chosen
+                        chosen_mb_inds = chosen_indices[micro_batch_inds]
+                        chosen_responses = responses[chosen_mb_inds]
+
+                        ## rejected
+                        rejected_mb_inds = rejected_indices[micro_batch_inds]
+                        rejected_responses = responses[rejected_mb_inds]
+
+                        concat_mb_inds = torch.cat((chosen_mb_inds, rejected_mb_inds), dim=0)
+                        concat_query_responses = query_responses[concat_mb_inds]
+                        num_examples = chosen_mb_inds.shape[0]
+
+                        # if ref_policy is not None:
+                        with torch.no_grad():
+                            concat_ref_output = forward(ref_policy, concat_query_responses, tokenizer.pad_token_id)
+                            chosen_ref_logits = concat_ref_output.logits[:num_examples]
+                            rejected_ref_logits = concat_ref_output.logits[num_examples:]
+
+                            chosen_ref_logits = chosen_ref_logits[:, context_length - 1 : -1]
+                            chosen_ref_logits /= args.temperature + 1e-7
+                            chosen_ref_all_logprobs = F.log_softmax(chosen_ref_logits, dim=-1)
+                            chosen_ref_logprobs = torch.gather(
+                                chosen_ref_all_logprobs, 2, chosen_responses.unsqueeze(-1)
+                            ).squeeze(-1)
+                            chosen_ref_logprobs = torch.masked_fill(
+                                chosen_ref_logprobs, padding_mask[chosen_mb_inds], INVALID_LOGPROB
+                            )
+                            chosen_ref_logprobs_sum = (chosen_ref_logprobs * ~padding_mask[chosen_mb_inds]).sum(1)
+
+                            rejected_ref_logits = rejected_ref_logits[:, context_length - 1 : -1]
+                            rejected_ref_logits /= args.temperature + 1e-7
+                            rejected_ref_all_logprobs = F.log_softmax(rejected_ref_logits, dim=-1)
+                            rejected_ref_logprobs = torch.gather(
+                                rejected_ref_all_logprobs, 2, rejected_responses.unsqueeze(-1)
+                            ).squeeze(-1)
+                            rejected_ref_logprobs = torch.masked_fill(
+                                rejected_ref_logprobs, padding_mask[rejected_mb_inds], INVALID_LOGPROB
+                            )
+                            rejected_ref_logprobs_sum = (rejected_ref_logprobs * ~padding_mask[rejected_mb_inds]).sum(
+                                1
+                            )
+
+                            ref_logratios = chosen_ref_logprobs_sum - rejected_ref_logprobs_sum
+
                         with accelerator.accumulate(model):
-                            micro_batch_end = micro_batch_start + args.per_device_train_batch_size
-                            micro_batch_inds = mini_batch_inds[micro_batch_start:micro_batch_end]
-
-                            ## chosen
-                            chosen_mb_inds = chosen_indices[micro_batch_inds]
-                            chosen_responses = responses[chosen_mb_inds]
-
-                            ## rejected
-                            rejected_mb_inds = rejected_indices[micro_batch_inds]
-                            rejected_responses = responses[rejected_mb_inds]
-
-                            concat_mb_inds = torch.cat((chosen_mb_inds, rejected_mb_inds), dim=0)
-                            concat_query_responses = query_responses[concat_mb_inds]
-
                             concat_output = forward(model, concat_query_responses, tokenizer.pad_token_id)
-                            num_examples = chosen_mb_inds.shape[0]
                             chosen_logits = concat_output.logits[:num_examples]
                             rejected_logits = concat_output.logits[num_examples:]
 
@@ -533,9 +553,9 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                             chosen_logprobs = torch.masked_fill(
                                 chosen_logprobs, padding_mask[chosen_mb_inds], INVALID_LOGPROB
                             )
-                            chosen_ref_logprobs = ref_logprobs[chosen_mb_inds]
+                            # chosen_ref_logprobs = ref_logprobs[chosen_mb_inds]
                             chosen_logprobs_sum = (chosen_logprobs * ~padding_mask[chosen_mb_inds]).sum(1)
-                            chosen_ref_logprobs_sum = (chosen_ref_logprobs * ~padding_mask[chosen_mb_inds]).sum(1)
+                            # chosen_ref_logprobs_sum = (chosen_ref_logprobs * ~padding_mask[chosen_mb_inds]).sum(1)
 
                             # rejected
                             rejected_logits = rejected_logits[:, context_length - 1 : -1]
@@ -547,14 +567,13 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                             rejected_logprobs = torch.masked_fill(
                                 rejected_logprobs, padding_mask[rejected_mb_inds], INVALID_LOGPROB
                             )
-                            rejected_ref_logprobs = ref_logprobs[rejected_mb_inds]
+                            # rejected_ref_logprobs = ref_logprobs[rejected_mb_inds]
                             rejected_logprobs_sum = (rejected_logprobs * ~padding_mask[rejected_mb_inds]).sum(1)
-                            rejected_ref_logprobs_sum = (rejected_ref_logprobs * ~padding_mask[rejected_mb_inds]).sum(
-                                1
-                            )
+                            # rejected_ref_logprobs_sum = (rejected_ref_logprobs * ~padding_mask[rejected_mb_inds]).sum(
+                            # 1
+                            # )
 
                             pi_logratios = chosen_logprobs_sum - rejected_logprobs_sum
-                            ref_logratios = chosen_ref_logprobs_sum - rejected_ref_logprobs_sum
 
                             logits = pi_logratios - ref_logratios
 
@@ -595,6 +614,11 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                         chosen_logits, rejected_logits,
                         chosen_logprobs, rejected_logprobs,
                         chosen_responses, rejected_responses,
+                        chosen_all_logprobs, rejected_all_logprobs,
+                        concat_ref_output,
+                        chosen_ref_logits, rejected_ref_logits,
+                        chosen_ref_logprobs, rejected_ref_logprobs,
+                        chosen_ref_all_logprobs, rejected_ref_all_logprobs,
                     )
                     # fmt: on
                     torch.cuda.empty_cache()

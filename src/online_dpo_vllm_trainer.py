@@ -290,13 +290,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "batch_num": []}
 
-        generation_config = SamplingParams(
-            temperature=(args.temperature + 1e-7),
-            top_p=1.0,
-            max_tokens=args.response_length,
-            include_stop_str_in_output=True,
-        )
-
         if accelerator.is_main_process:
             if args.fp16:
                 vllm_dtype = torch.float16
@@ -314,10 +307,11 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                     vllm_device,
                     args.vllm_gpu_memory_utilization,
                     vllm_dtype,
-                    generation_config,
                     response_ids_Q,
                     param_prompt_Q,
                     self.state.logging_steps,
+                    args.temperature,
+                    args.response_length,
                 ),
             )
             thread.start()
@@ -735,12 +729,20 @@ def vllm_generate(
     vllm_device: str,
     vllm_gpu_memory_utilization: float,
     vllm_dtype: str,
-    generation_config: SamplingParams,
     response_ids_Q: queue.Queue,
     param_prompt_Q: queue.Queue,
     logging_steps: int,
+    temperature: float,
+    response_length: int,
 ):
     vllm_single_gpu_patch()
+    generation_config = SamplingParams(
+        temperature=(temperature + 1e-7),
+        top_p=1.0,
+        max_tokens=response_length,
+        include_stop_str_in_output=True,
+    )
+
     llm = LLM(
         model=model_name_or_path,
         revision="main",

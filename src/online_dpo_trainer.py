@@ -575,7 +575,7 @@ class OnlineDPOTrainer(RLOOTrainer):
             total_time = time.time() - batch_start_time
 
             if batch_num % self.state.logging_steps == 0:
-                accelerator.print(f"💬💬💬 generation took: {time.time() - start_time:.2f} seconds")
+                accelerator.print(f"💬💬💬 generation took: {batch_gen_time:.2f} seconds")
                 accelerator.print(f"🍬🍬🍬 ref and reward inference took {batch_reward_and_ref_time:.2f}")
                 accelerator.print(f"🏋️🏋️🏋️ training took {train_time:.2f}")
                 accelerator.print(f"🙆🙆🙆 total training thread took {total_time:.2f}")

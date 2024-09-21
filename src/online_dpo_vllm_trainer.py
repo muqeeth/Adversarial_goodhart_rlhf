@@ -288,7 +288,6 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             else:
                 self.state.save_steps = args.save_steps
 
-        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         saved_data = {"prompt": [], "chosen": [], "rejected": [], "batch_num": []}
 
         if accelerator.is_main_process:
@@ -331,6 +330,7 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
                 ]  # remove padding
                 param_prompt_Q.put((None, g_queries_list))
 
+        self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for batch_num in range(1, self.num_batches + 1):
             queries = next_queries
             self.state.episode += 1 * args.batch_size
@@ -358,14 +358,10 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
 
                     # send next queries to be generated
                     model_named_parameters = accelerator._get_named_parameters(model)
-                    put_start_time = time.time()
                     param_prompt_Q.put((model_named_parameters.items(), g_queries_list))
-                    # put_time = time.time() - put_start_time
 
                     # get response for previous queries
-                    get_start_time = time.time()
                     g_response_ids = response_ids_Q.get()
-                    # get_time = time.time() - get_start_time
 
                     DUMMY_PAD_TOKEN = 0  # we can't use tokenizer.pad_token_id because it's outside vocab and `torch.gather(all_logprob, 2, response.unsqueeze(-1))` will error out
                     g_padded_response_ids = [

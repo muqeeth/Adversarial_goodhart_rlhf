@@ -32,7 +32,6 @@ class GenerateScriptArguments:
     tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
     dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
     split: Optional[str] = field(default="validation", metadata={"help": "the dataset name"})
-    generate_batch_size: Optional[int] = field(default=4)
 
     temperature: Optional[float] = field(default=0.7, metadata={"help": "Gen temperature"})
     top_p: Optional[float] = field(default=1.0, metadata={"help": "Gen temperature"})

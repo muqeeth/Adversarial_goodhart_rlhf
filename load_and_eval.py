@@ -29,7 +29,7 @@ class EvalScriptArguments:
     gold_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
     gold_model_revision: Optional[str] = field(default=None)
     eval_dtype: Optional[str] = field(default="auto")
-    eval_batch_size: Optional[int] = field(default=16)
+    batch_size: Optional[int] = field(default=16)
     gold_tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
     flash_attention: Optional[bool] = field(default=False)
 
@@ -65,7 +65,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
     ref_rewards = []
     with state.split_between_processes(all_reference) as reference:
         for out in tqdm(
-            reward_pipeline(reference, batch_size=args.eval_batch_size),
+            reward_pipeline(reference, batch_size=args.batch_size),
             total=len(reference),
             disable=not state.is_local_main_process,
             desc="Reference",
@@ -84,7 +84,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
         episode = all_episodes[step_str]
         with state.split_between_processes(all_query_response) as query_response:
             for out in tqdm(
-                reward_pipeline(query_response, batch_size=args.eval_batch_size),
+                reward_pipeline(query_response, batch_size=args.batch_size),
                 total=len(query_response),
                 disable=not state.is_local_main_process,
                 desc=f"Reward Step {step_str}",
@@ -94,7 +94,7 @@ def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, lo
                 gen_rewards.extend([o["score"] for o in out])
 
             for out in tqdm(
-                ppl_pipeline(query_response, prompt_template="TL;DR:", batch_size=args.eval_batch_size),
+                ppl_pipeline(query_response, prompt_template="TL;DR:", batch_size=args.batch_size),
                 total=len(query_response),
                 disable=not state.is_local_main_process,
                 desc=f"PPL Step {step_str}",

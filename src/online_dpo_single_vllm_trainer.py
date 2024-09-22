@@ -633,6 +633,15 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                         rejected_logprobs,
                         chosen_responses,
                         rejected_responses,
+                        chosen_all_logprobs,
+                        rejected_all_logprobs,
+                        concat_ref_output,
+                        chosen_ref_logits,
+                        rejected_ref_logits,
+                        chosen_ref_logprobs,
+                        rejected_ref_logprobs,
+                        chosen_ref_all_logprobs,
+                        rejected_ref_all_logprobs,
                     )
                     torch.cuda.empty_cache()
 

@@ -738,8 +738,8 @@ class OnlineDPOVLLMTrainer(RLOOTrainer):
             if sampling:
                 break
         df = pd.DataFrame(table)
-        if self.accelerator.process_index == 0:
-            print_rich_table(df.iloc[0 : 0 + 5])
+        # if self.accelerator.process_index == 0:
+        #     print_rich_table(df.iloc[0 : 0 + 5])
         if "wandb" in args.report_to:
             import wandb
 

@@ -7,7 +7,7 @@ dataset_test_split: validation
 max_length: 512
 ## vllm
 vllm_device: cuda:0
-vllm_gpu_memory_utilization: 0.3
+vllm_gpu_memory_utilization: 0.2
 vllm: True
 single: True
 # fp16

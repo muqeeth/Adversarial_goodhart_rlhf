@@ -95,7 +95,7 @@ if __name__ == "__main__":
         config.reward_model_path, num_labels=1, torch_dtype=torch_dtype
     )
     # fp16 is mixed precision and only the inference models (reward and ref) can have fp16 dtype
-    policy_dtype = torch_dtype if not torch_dtype == torch.float16 else torch.float32
+    policy_dtype = torch_dtype if torch_dtype != torch.float16 else torch.float32
     policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=policy_dtype)
 
     if model_config.use_peft:
@@ -105,8 +105,6 @@ if __name__ == "__main__":
     else:
         ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path, torch_dtype=torch_dtype)
 
-    ref_policy.eval()
-    reward_model.eval()
     ################
     # Dataset
     ################

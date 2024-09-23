@@ -5,7 +5,6 @@ run_name: onlinedpo_pythia2.8b_tldr6.9b
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
 dataset_test_split: validation
 max_length: 512
-fp16: True
 ## online dpo stuff
 loss_type: sigmoid
 ## ppo stuff
@@ -13,7 +12,7 @@ total_episodes: 131072
 response_length: 53
 num_ppo_epochs: 1
 num_mini_batches: 1 
-learning_rate: 2.0e-4
+learning_rate: 3.0e-6
 per_device_train_batch_size: 2
 gradient_accumulation_steps: 64
 model_name_or_path: mnoukhov/pythia2.8b-sft-tldr 

@@ -28,15 +28,14 @@ class EvalScriptArguments:
     wandb_run_id: Optional[str] = field(default=None)
     gold_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
     gold_model_revision: Optional[str] = field(default=None)
-    eval_dtype: Optional[str] = field(default="auto")
+    torch_dtype: Optional[str] = field(default="auto")
     batch_size: Optional[int] = field(default=16)
     gold_tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
-    flash_attention: Optional[bool] = field(default=False)
 
 
 def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, log_to_wandb=False):
     state = PartialState()
-    torch_dtype = args.eval_dtype if args.eval_dtype in ["auto", None] else getattr(torch, args.eval_dtype)
+    torch_dtype = args.torch_dtype if args.torch_dtype in ["auto", None] else getattr(torch, args.torch_dtype)
     model_kwargs = dict(
         torch_dtype=torch_dtype,
         device_map={"": state.process_index},

@@ -36,7 +36,7 @@ class GenerateScriptArguments:
     temperature: Optional[float] = field(default=0.7, metadata={"help": "Gen temperature"})
     top_p: Optional[float] = field(default=1.0, metadata={"help": "Gen temperature"})
     max_new_tokens: Optional[int] = field(default=48, metadata={"help": "max new tokens"})
-    gen_dtype: Optional[str] = field(default="auto")
+    torch_dtype: Optional[str] = field(default="auto")
     sanity_check: Optional[bool] = field(default=False)
     wandb_run_id: str = None  # unused
 
@@ -98,7 +98,7 @@ def generate(script_args):
         llm = LLM(
             model=model_name_or_path if merged_model_path is None else merged_model_path,
             tokenizer=script_args.tokenizer_name,
-            dtype=script_args.gen_dtype,
+            dtype=script_args.torch_dtype,
             trust_remote_code=True,
             tensor_parallel_size=tensor_parallel_size,
         )

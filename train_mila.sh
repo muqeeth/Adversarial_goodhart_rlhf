@@ -10,4 +10,6 @@
 
 set -e
 source mila.sh
+# tag with the git commit
+export WANDB_TAGS=$(git rev-parse --short HEAD)
 $@ --output_global_parent_dir $SCRATCH/trl_summarize/results

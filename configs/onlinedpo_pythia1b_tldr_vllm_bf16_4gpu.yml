@@ -1,4 +1,4 @@
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: slurm
 output_dir: onlinedpo_pythia1b_tldr6.9b_vllm
 run_name: onlinedpo_pythia1b_tldr6.9b
@@ -23,7 +23,7 @@ gradient_accumulation_steps: 21
 model_name_or_path: mnoukhov/pythia1b-sft-tldr 
 sft_model_path: mnoukhov/pythia1b-sft-tldr 
 reward_model_path: mnoukhov/pythia1b-rm-tldr6.9b
-local_rollout_forward_batch_size: 40
+local_rollout_forward_batch_size: 42
 non_eos_penalty: True
 stop_token: eos
 # evaluation_strategy: "steps"
@@ -33,5 +33,5 @@ save_strategy: steps
 save_steps: 0.25
 hub_strategy: all_checkpoints
 logging_steps: 100
-num_sample_generations: 5
+num_sample_generations: 4
 save_generations: True

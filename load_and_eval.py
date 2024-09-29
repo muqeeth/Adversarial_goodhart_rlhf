@@ -182,8 +182,9 @@ if __name__ == "__main__":
 
     if args.sanity_check:
         args.wandb_run_id = None
-        generations = {checkpoint_name: generations[checkpoint_name]}
-        generations[checkpoint_name].dataset = generations[checkpoint_name].dataset.select(range(100))
+        first_ckpt = next(iter(generations.keys()))
+        generations = {first_ckpt: generations[first_ckpt]}
+        generations[first_ckpt].dataset = generations[first_ckpt].dataset.select(range(100))
         reference.dataset = reference.dataset.select(range(100))
 
     if args.wandb_run_id == "snow":

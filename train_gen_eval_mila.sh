@@ -35,4 +35,4 @@ else
     echo "output path doesn't contain one of model names"
     exit 1
 fi
-python load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG $DTYPE_ARG
+python load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG

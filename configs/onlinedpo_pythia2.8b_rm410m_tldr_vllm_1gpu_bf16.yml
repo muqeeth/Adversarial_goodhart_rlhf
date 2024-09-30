@@ -25,7 +25,7 @@ per_device_train_batch_size: 1
 gradient_accumulation_steps: 512
 model_name_or_path: mnoukhov/pythia2.8b-sft-tldr
 sft_model_path: mnoukhov/pythia2.8b-sft-tldr
-reward_model_path: mnoukhov/pythia2.8b-rm-tldr6.9b
+reward_model_path: mnoukhov/pythia410m-rm-tldr6.9b
 non_eos_penalty: True
 stop_token: eos
 local_rollout_forward_batch_size: 32

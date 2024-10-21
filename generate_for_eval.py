@@ -129,11 +129,6 @@ def generate(script_args):
             trainer_states[model_or_checkpoint_name] = {}
 
     if script_args.save_generations:
-        # TODO add hash to dataset path
-        # sampling_str = str(sampling_params)
-        # sampling_hash = hashlib.sha256(sampling_str.encode()).hexdigest()[:10]
-
-        # TODO fix model name or path string
         if script_args.dataset_path is not None:
             dataset_path = script_args.dataset_path
         else:

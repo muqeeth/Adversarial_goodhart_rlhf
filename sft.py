@@ -4,15 +4,12 @@ from typing import Optional
 
 import torch
 from accelerate import PartialState
-from datasets import builder, load_dataset
+from datasets import load_dataset
 from transformers import AutoTokenizer
 from trl import ModelConfig, SFTConfig, SFTTrainer
 from trl.trainer.utils import get_kbit_device_map, get_peft_config, get_quantization_config
 
 from src.utils import TRLParser
-
-
-builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 
 @dataclass

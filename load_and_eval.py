@@ -7,17 +7,13 @@ import numpy as np
 import torch
 from accelerate import PartialState
 from accelerate.utils import gather_object
-from datasets import builder, load_from_disk
+from datasets import load_from_disk
 from tqdm.auto import tqdm
 from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
 
-import src.perplexity
 import wandb
 from src.utils import TRLParser
-
-
-builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 
 @dataclass
@@ -34,7 +30,7 @@ class EvalScriptArguments:
     dataset_path: str = None
 
 
-def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, log_to_wandb=False):
+def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=False):
     state = PartialState()
     torch_dtype = args.torch_dtype if args.torch_dtype in ["auto", None] else getattr(torch, args.torch_dtype)
     model_kwargs = dict(
@@ -206,4 +202,4 @@ if __name__ == "__main__":
         wandb.init(id=args.wandb_run_id, resume="allow")
         print(f"Logging to WandB {args.wandb_run_id}")
 
-    evaluate(args, prompts, reference, generations, episodes, log_to_wandb)
+    evaluate(args, reference, generations, episodes, log_to_wandb)

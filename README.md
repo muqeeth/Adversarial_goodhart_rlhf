@@ -45,8 +45,10 @@ To make things easier, I provide slurm scripts for training, generation, and eva
 For example to run online dpo
 
 ```bash
-./train_generate_and_eval.sh online_dpo.py --config configs/onlinedpo_pythia410m_tldr.yml --override_arg=override_value
+./train_generate_and_eval.sh python online_dpo.py --config configs/onlinedpo_pythia410m_tldr.yml --override_arg=override_value
 ```
+
+Note: to facilitate passing the output directory to the eval scripts, the train script creates a symlink to the output dir called `output_dir`
 
 ## Multi-GPU training and eval 
 By default, the script is single gpu. For multi-gpu, there is an annoying issue with vllm inference used in `generate_for_eval.py` 

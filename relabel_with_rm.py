@@ -19,8 +19,6 @@ class ScriptArguments:
     train_split: str = "train"
     eval_split: Optional[str] = "validation"
     batch_size: int = 32
-    # TODO?
-    # judge_both_swaps: bool = False
     template: Literal["tldr", "hh"] = field(default="tldr", metadata={"help": "hh or summarization"})
     seed: Optional[int] = field(default=0)
     sanity_check: Optional[bool] = field(default=False)

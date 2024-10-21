@@ -338,14 +338,15 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                 device=accelerator.device,
                 dtype=torch.long,
             )
-            queries = next_queries
-            g_response_ids = next_g_response_ids
-            g_padded_response_ids = [
-                list(response) + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
-                for response in g_response_ids
-            ]
-            g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
-            vllm_responses[:] = g_padded_response_ids
+            if not args.sync:
+                queries = next_queries
+                g_response_ids = next_g_response_ids
+                g_padded_response_ids = [
+                    list(response) + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
+                    for response in g_response_ids
+                ]
+                g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
+                vllm_responses[:] = g_padded_response_ids
             batch_start_time = time.time()
             with torch.no_grad():
                 next_queries = data["input_ids"].to(device)
@@ -368,6 +369,17 @@ class OnlineDPOSingleVLLMTrainer(RLOOTrainer):
                         next_g_queries_list,
                         log=(batch_num % self.state.logging_steps == 0),
                     )
+
+                    if args.sync:
+                        queries = next_queries
+                        g_response_ids = next_g_response_ids
+                        g_padded_response_ids = [
+                            list(response) + [DUMMY_PAD_TOKEN] * (args.response_length - len(response))
+                            for response in g_response_ids
+                        ]
+                        g_padded_response_ids = torch.tensor(g_padded_response_ids, device=device)
+                        vllm_responses[:] = g_padded_response_ids
+                        batch_start_time = time.time()
 
                 local_vllm_responses = vllm_responses[
                     accelerator.local_process_index * queries.shape[0] : (accelerator.local_process_index + 1)

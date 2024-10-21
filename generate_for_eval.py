@@ -39,6 +39,7 @@ class GenerateScriptArguments:
     torch_dtype: Optional[str] = field(default="auto")
     sanity_check: Optional[bool] = field(default=False)
     wandb_run_id: str = None  # unused
+    dataset_path: str = None
 
 
 def generate(script_args):
@@ -133,10 +134,13 @@ def generate(script_args):
         # sampling_hash = hashlib.sha256(sampling_str.encode()).hexdigest()[:10]
 
         # TODO fix model name or path string
-        dataset_path = os.path.join(
-            script_args.model_name_or_path,
-            "_generations",
-        )
+        if script_args.dataset_path is not None:
+            dataset_path = script_args.dataset_path
+        else:
+            dataset_path = os.path.join(
+                script_args.model_name_or_path,
+                "_generations",
+            )
         os.makedirs(dataset_path, exist_ok=True)
         print("saving dataset to")
         print(dataset_path)

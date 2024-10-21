@@ -1,5 +1,5 @@
-# set in your bashrc
-# HF_HOME=/network/scratch/n/noukhovm/huggingface
+# optionally set the huggingface folder
+# HF_HOME=
 
 # create venv called env
 # pip install -r requirements.txt

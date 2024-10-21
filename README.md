@@ -1,4 +1,4 @@
-# Code for Paper Title
+# Code for Asynchronous RLHF: Faster, More Efficient, and Off-Policy RL for Language Models
 
 
 ## Setup
@@ -90,5 +90,13 @@ Notes
 - if you're using older GPUs without bf16, add args `--fp16 --bf16 False --torch_dtype float16`
 - `--wandb_run_id` sets the wandb run id or if set to `=slurm` it will default to `parent folder / slurm_id / output_dir` 
 
+## Asynchronous Secret Sauce
+
+The asynchronous learning leverages the code:
+
+1. `src/vllm_utils.py` which tricks vllm into being on only the GPUs we tell it to be on
+2. `src/online_dpo_vllm_trainer.py` which creates a separate thread for the training and the vllm inference and passes data between the two of them using queues
+
+The majority of this code was written by @vwxyzjn but commits were lost when copying and patching so I wanted to give credit where it's due.
 
 ## Citation

@@ -27,16 +27,12 @@ class ScriptArguments:
     "parent dir that output dir goes under"
 
     dataset_name: str = field(default=None, metadata={"help": "the dataset name"})
-    # dataset_text_field: str = field(default=None, metadata={"help": "the text field of the dataset"})
     dataset_train_split: str = field(default="train", metadata={"help": "the name of the training set of the dataset"})
     dataset_test_split: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
-    # output_model_name: str = field(default="", metadata={"help": "model name to upload"})
     max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
 
     wandb_run_id: Optional[str] = field(default=None)
-    """currently badly named but the cluster, either slurm or snow
-    if slurm then it saves under global parent dir / slurm job id / config_name
-    """
+    """wandb run id or if "slurm" then it saves under global parent dir / slurm job id / config_name"""
     single: bool = field(default=False)
 
 
@@ -62,20 +58,15 @@ if __name__ == "__main__":
     parser = TRLParser((ScriptArguments, OnlineDPOVLLMConfig, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
 
-    if args.wandb_run_id == "snow":
-        run_id = os.path.basename(os.getcwd())
-        config_name = os.path.basename(config.output_dir)
-        # save to parent / run id / output_dir
-        if args.output_global_parent_dir is not None:
-            config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
-        os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
-    elif args.wandb_run_id == "slurm":
+    if args.wandb_run_id == "slurm":
         run_id = os.environ["SLURM_JOB_ID"]
         config_name = os.path.basename(config.output_dir)
         # save to parent / slurm id / output_dir
         if args.output_global_parent_dir is not None:
             config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
         os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
+    elif args.wandb_run_id is not None:
+        os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 
     ################
     # Model & Tokenizer

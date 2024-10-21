@@ -88,6 +88,7 @@ Notes
 - single-gpu `vllm` configs are placing an extra, vllm model on the gpu for generation. this uses more memory but can be worth it
 - 4 gpu vllm configs assume 3 gpus for the training and 1 for vllm generation, adjust batch sizes if you do things differently
 - if you're using older GPUs without bf16, add args `--fp16 --bf16 False --torch_dtype float16`
+- `--wandb_run_id` sets the wandb run id or if set to `=slurm` it will default to `parent folder / slurm_id / output_dir` 
 
 
 ## Citation

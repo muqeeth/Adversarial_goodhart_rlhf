@@ -3,7 +3,6 @@ import math
 import os
 import time
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -14,7 +13,6 @@ import torch.nn.functional as F
 from accelerate import Accelerator
 from accelerate.utils import gather_object
 from datasets import Dataset
-from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
 from torch.utils.data import DataLoader
 from transformers import (
     DataCollatorWithPadding,
@@ -41,14 +39,7 @@ from trl.trainer.utils import (
     truncate_response,
 )
 
-from src.utils import INVALID_LOGPROB, OnlineTrainerState, copy_to, prepare_deepspeed
-
-
-@dataclass
-class ElasticPPOv2Config(PPOv2Config):
-    elastic_reset: bool = False
-    ema_decay: float = None
-    reset_steps: float = None
+from src.utils import INVALID_LOGPROB, OnlineTrainerState, prepare_deepspeed
 
 
 # taken from https://github.com/OpenLMLab/MOSS-RLHF/blob/40b91eb2f2b71b16919addede0341d2bef70825d/ppo/ppo_trainer.py#L29
@@ -71,7 +62,7 @@ class PolicyAndValueWrapper(nn.Module):
 class PPOv2Trainer(Trainer):
     def __init__(
         self,
-        config: ElasticPPOv2Config,
+        config: PPOv2Config,
         tokenizer: PreTrainedTokenizer,
         policy: nn.Module,
         ref_policy: nn.Module,
@@ -213,11 +204,6 @@ class PPOv2Trainer(Trainer):
             self.ref_policy = self.ref_policy.to(self.accelerator.device)
             self.reward_model = self.reward_model.to(self.accelerator.device)
 
-        if args.elastic_reset:
-            self.ema_model = AveragedModel(self.model.policy, multi_avg_fn=get_ema_multi_avg_fn(args.ema_decay))
-        else:
-            self.ema_model = None
-
     def get_train_dataloader(self) -> DataLoader:
         return self.dataloader
 
@@ -295,14 +281,6 @@ class PPOv2Trainer(Trainer):
                 self.state.save_steps = math.ceil(self.state.max_steps * args.save_steps)
             else:
                 self.state.save_steps = args.save_steps
-
-        if args.elastic_reset:
-            if args.reset_steps < 1:
-                self.reset_steps = math.ceil(self.state.max_steps * args.reset_steps)
-            else:
-                self.reset_steps = args.reset_steps
-        else:
-            self.reset_steps = None
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
         for update in range(1, self.num_batches + 1):
@@ -505,39 +483,6 @@ class PPOv2Trainer(Trainer):
                     if self.control.should_save:
                         self._save_checkpoint(model, trial=None, metrics=None)
                         self.control = self.callback_handler.on_save(self.args, self.state, self.control)
-
-                    if self.args.elastic_reset:
-                        self.ema_model.update_parameters(model.policy)
-                        print("policy")
-                        self.accelerator.print(model.policy.embed_out.weight)
-                        print("ema")
-                        self.accelerator.print(self.ema_model.module.embed_out.weight)
-
-                        if self.state.global_step % self.reset_steps == 0:
-                            self.accelerator.print("RESET")
-                            if self.is_deepspeed_enabled:
-                                policy_params = model.module.policy
-                                ema_params = self.ema_model.module
-                                ref_params = ref_policy.module
-                            else:
-                                policy_params = model.policy
-                                ema_params = self.ema_model.module
-                                ref_params = ref_policy
-                            #     init_state_dict = self.ref_policy.module.state_dict()
-                            # else:
-                            #     init_state_dict = self.ref_policy.state_dict()
-                            # could be wrong without deepspeed?
-                            # self.accelerator.print(
-                            #     [(key, p) for key, p in self.ema_model.module.named_parameters()][:1]
-                            # )
-                            # self.accelerator.print([key for key, p in self.ref_policy.module.named_parameters()][:5])
-                            # self.accelerator.print([(key, p) for key, p in model.module.policy.named_parameters()][:5])
-                            copy_to(ema_params, policy_params)
-                            # copy_to(ref_params, ema_params)
-                            # copy_to(ref_params, policy_params)
-                            # model, optimizer = accelerator.prepare(model, optimizer)
-                            # self.model.policy.load_state_dict(ema_state_dict)
-                            # self.ema_model.module.load_state_dict(init_state_dict)
 
                     # del everything and empty cache
                     # fmt: off

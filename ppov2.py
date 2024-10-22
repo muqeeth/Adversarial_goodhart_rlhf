@@ -10,8 +10,9 @@ from transformers import (
     AutoTokenizer,
 )
 from trl import ModelConfig
+from trl.trainer.ppov2_config import PPOv2Config
 
-from src.ppov2_trainer import ElasticPPOv2Config, PPOv2Trainer
+from src.ppov2_trainer import PPOv2Trainer
 from src.utils import TRLParser, WandbLogModelConfig
 
 
@@ -45,17 +46,20 @@ def prepare_dataset(dataset, tokenizer):
 
 
 if __name__ == "__main__":
-    parser = TRLParser((ScriptArguments, ElasticPPOv2Config, ModelConfig))
+    parser = TRLParser((ScriptArguments, PPOv2Config, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
 
     if args.output_global_parent_dir is not None:
         run_id = os.path.basename(os.getcwd())
         config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
 
-    if args.wandb_run_id == "snow":
-        run_id = os.path.basename(os.getcwd())
-        output_dir_basename = os.path.basename(config.output_dir)
-        os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
+    if args.wandb_run_id == "slurm":
+        run_id = os.environ["SLURM_JOB_ID"]
+        config_name = os.path.basename(config.output_dir)
+        # save to parent / slurm id / output_dir
+        if args.output_global_parent_dir is not None:
+            config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
+        os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
     elif args.wandb_run_id is not None:
         os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 

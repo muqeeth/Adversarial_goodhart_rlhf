@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional
 
 import torch
-from datasets import DatasetDict, builder, load_dataset
+from datasets import DatasetDict, load_dataset
 from tqdm.auto import tqdm
 from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
@@ -12,9 +12,6 @@ from trl.trainer.utils import get_kbit_device_map, get_quantization_config
 from src.utils import TRLParser
 
 
-builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
-
-
 @dataclass
 class ScriptArguments:
     dataset_name: str = None
@@ -22,8 +19,6 @@ class ScriptArguments:
     train_split: str = "train"
     eval_split: Optional[str] = "validation"
     batch_size: int = 32
-    # TODO?
-    # judge_both_swaps: bool = False
     template: Literal["tldr", "hh"] = field(default="tldr", metadata={"help": "hh or summarization"})
     seed: Optional[int] = field(default=0)
     sanity_check: Optional[bool] = field(default=False)

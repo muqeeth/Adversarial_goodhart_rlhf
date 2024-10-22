@@ -2,7 +2,7 @@ output_dir: rm_pythia2.8b_tldr6.9b
 run_name: rm_pythia2.8b_tldr6.9b
 hub_model_id: mnoukhov/pythia2.8b-rm-tldr6.9b
 push_to_hub: True
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: snow
 # 
 model_name_or_path: mnoukhov/pythia2.8b-sft-tldr
@@ -16,12 +16,7 @@ per_device_train_batch_size: 2
 per_device_eval_batch_size: 2
 num_train_epochs: 1
 max_length: 640
-## peft
 use_peft: False
-# lora_r: 16
-# lora_alpha: 32
-# lora_dropout: 0.
-# lora_task_type: SEQ_CLS
 gradient_checkpointing: False
 ## save strategy
 evaluation_strategy: "steps"

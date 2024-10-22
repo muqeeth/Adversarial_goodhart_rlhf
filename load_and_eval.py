@@ -7,17 +7,13 @@ import numpy as np
 import torch
 from accelerate import PartialState
 from accelerate.utils import gather_object
-from datasets import builder, load_from_disk
+from datasets import load_from_disk
 from tqdm.auto import tqdm
 from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
 
-import src.perplexity
 import wandb
 from src.utils import TRLParser
-
-
-builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
 
 @dataclass
@@ -31,9 +27,10 @@ class EvalScriptArguments:
     torch_dtype: Optional[str] = field(default="auto")
     batch_size: Optional[int] = field(default=16)
     gold_tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
+    dataset_path: str = None
 
 
-def evaluate(args, all_prompts, all_reference, all_generations, all_episodes, log_to_wandb=False):
+def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=False):
     state = PartialState()
     torch_dtype = args.torch_dtype if args.torch_dtype in ["auto", None] else getattr(torch, args.torch_dtype)
     model_kwargs = dict(
@@ -154,7 +151,11 @@ if __name__ == "__main__":
     parser = TRLParser([EvalScriptArguments])
     args = parser.parse_args_and_config()[0]
 
-    generated_dataset_path = os.path.join(args.model_name_or_path, "_generations")
+    if args.dataset_path is not None:
+        generated_dataset_path = args.dataset_path
+    else:
+        generated_dataset_path = os.path.join(args.model_name_or_path, "_generations")
+
     dataset = load_from_disk(generated_dataset_path)
 
     with open(os.path.join(generated_dataset_path, "trainer_states.json"), "r") as f:
@@ -201,4 +202,4 @@ if __name__ == "__main__":
         wandb.init(id=args.wandb_run_id, resume="allow")
         print(f"Logging to WandB {args.wandb_run_id}")
 
-    evaluate(args, prompts, reference, generations, episodes, log_to_wandb)
+    evaluate(args, reference, generations, episodes, log_to_wandb)

@@ -1,6 +1,14 @@
-set -e 
+#!/bin/bash
+#SBATCH --output=logs/%j/job_output.txt
+#SBATCH --error=logs/%j/job_error.txt
+#SBATCH --cpus-per-task=4
+#SBATCH --ntasks-per-node=1
+
+set -e
+source env.sh
 MODEL_PATH_ARG=$@
-GPU_MEMORY=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
+
+python generate_for_eval.py --config configs/generate_tldr.yml $MODEL_PATH_ARG
 
 if [[ "$MODEL_PATH_ARG" == *"pythia410m"* ]]; then
     REF_ARG=" --ref_model_name mnoukhov/pythia410m-sft-tldr"
@@ -13,14 +21,4 @@ else
     exit 1
 fi
 
-if [[ "$GPU_MEMORY" == "16"* ]]; then
-    # lazy check if we're using 16gb gpus
-    BATCH_SIZE_ARG="--eval_batch_size 4"
-else
-    BATCH_SIZE_ARG=""
-fi
-
-echo $BATCH_SIZE_ARG
-
-accelerate launch --multi_gpu --mixed_precision=fp16 --num_processes=$NPROC \
-    load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG
+python load_and_eval.py --config configs/evaluate_tldr.yml $MODEL_PATH_ARG $REF_ARG

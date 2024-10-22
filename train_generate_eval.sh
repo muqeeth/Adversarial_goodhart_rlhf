@@ -1,24 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=trl_summarize
 #SBATCH --output=logs/%j/job_output.txt
 #SBATCH --error=logs/%j/job_error.txt
-#SBATCH --time=8:00:00
-#SBATCH --mem=32Gb
-#SBATCH --gres=gpu:rtx8000:1
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks-per-node=1
 
 set -e
-source mila.sh
+source env.sh
 # tag with the git commit
 export WANDB_TAGS=$(git rev-parse --short HEAD)
-$@ --output_global_parent_dir $SCRATCH/trl_summarize/results
-
-if [[ "$@" == *"bf16"* ]]; then
-    DTYPE_ARG=" --torch_dtype bfloat16"
-else
-    DTYPE_ARG=""
-fi
+$@ 
 
 MODEL_PATH=$(readlink -f output_dir)
 echo "Using output dir symlinked: $MODEL_PATH"

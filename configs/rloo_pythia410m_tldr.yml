@@ -1,4 +1,4 @@
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: snow
 output_dir: rloo_pythia410m_tldr6.9b
 run_name: rloo_pythia410m_tldr6.9b
@@ -20,9 +20,6 @@ reward_model_path: mnoukhov/pythia410m-rm-tldr6.9b
 local_rollout_forward_batch_size: 32
 non_eos_penalty: True
 stop_token: eos
-# evaluation_strategy: "steps"
-# eval_steps: 0.2
-## save strategy
 save_strategy: steps
 save_steps: 0.25
 hub_strategy: all_checkpoints

@@ -1,4 +1,4 @@
-# Code for Asynchronous RLHF: Faster, More Efficient, and Off-Policy RL for Language Models
+# Code for Asynchronous RLHF: Faster and More Efficient Off-Policy RL for Language Models
 
 
 ## Setup
@@ -97,6 +97,6 @@ The asynchronous learning leverages the code:
 1. `src/vllm_utils.py` which tricks vllm into being on only the GPUs we tell it to be on
 2. `src/online_dpo_vllm_trainer.py` which creates a separate thread for the training and the vllm inference and passes data between the two of them using queues
 
-The majority of this code was written by github.com/vwxyzjn but commits were lost when copying and patching so I wanted to give credit where it's due.
+The majority of the asynchronous parts of the code were written by [Costa](https://github.com/vwxyzjn) but commits were lost when copying and patching so I want to give credit where it's due.
 
 ## Citation

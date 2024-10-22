@@ -1,4 +1,3 @@
-# model_name_or_path: /home/toolkit/snapshots/fa0277d307db882ff9735fe0edc03cfb24a59442/dpo_pythia410m_tldr
 save_generations: True
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
 max_new_tokens: 128

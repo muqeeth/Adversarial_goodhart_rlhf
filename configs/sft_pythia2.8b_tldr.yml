@@ -2,7 +2,7 @@
 run_name: sft_pythia2.8b_tldr
 output_dir: sft_pythia2.8b_tldr
 hub_model_id: pythia2.8b-sft-tldr
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: snow
 push_to_hub: True
 # tldr stuff

@@ -1,7 +1,7 @@
 run_name: rm_pythia410m_tldr6.9b
 output_dir: rm_pythia410m_tldr6.9b
 hub_model_id: mnoukhov/pythia410m-rm-tldr6.9b
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: snow
 push_to_hub: True
 # 
@@ -10,7 +10,6 @@ dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_rela
 dataset_eval_split: validation
 learning_rate: 1.0e-5
 lr_scheduler_type: cosine
-fp16: True
 gradient_accumulation_steps: 8
 per_device_train_batch_size: 8
 per_device_eval_batch_size: 8

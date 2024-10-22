@@ -2,9 +2,8 @@ output_dir: rm_pythia1b_tldr6.9b
 run_name: rm_pythia1b_tldr6.9b
 hub_model_id: mnoukhov/pythia1b-rm-tldr6.9b
 push_to_hub: True
-output_global_parent_dir: /home/toolkit/trl_summarize/results
+output_global_parent_dir: results
 wandb_run_id: snow
-# 
 model_name_or_path: mnoukhov/pythia1b-sft-tldr
 dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b
 dataset_eval_split: validation
@@ -16,12 +15,7 @@ per_device_train_batch_size: 4
 per_device_eval_batch_size: 4
 num_train_epochs: 1
 max_length: 640
-## peft
 use_peft: False
-# lora_r: 16
-# lora_alpha: 32
-# lora_dropout: 0.
-# lora_task_type: SEQ_CLS
 gradient_checkpointing: False
 ## save strategy
 evaluation_strategy: "steps"
@@ -31,4 +25,3 @@ save_steps: 0.2
 hub_strategy: all_checkpoints
 logging_steps: 100
 ddp_find_unused_parameters: False
-

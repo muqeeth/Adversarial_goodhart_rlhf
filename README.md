@@ -100,3 +100,15 @@ The asynchronous learning leverages the code:
 The majority of the asynchronous parts of the code were written by [Costa](https://github.com/vwxyzjn) but commits were lost when copying and patching so I want to give credit where it's due.
 
 ## Citation
+
+```
+@misc{noukhovitch_asynchronous_2024,
+	title = {Asynchronous {RLHF}: {Faster} and {More} {Efficient} {Off}-{Policy} {RL} for {Language} {Models}},
+	shorttitle = {Asynchronous {RLHF}},
+	url = {http://arxiv.org/abs/2410.18252},
+	publisher = {arXiv},
+	author = {Noukhovitch, Michael and Huang, Shengyi and Xhonneux, Sophie and Hosseini, Arian and Agarwal, Rishabh and Courville, Aaron},
+	month = oct,
+	year = {2024},
+}
+```

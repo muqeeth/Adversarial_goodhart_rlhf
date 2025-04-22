@@ -24,6 +24,7 @@ class RewardScriptArguments:
     wandb_run_id: Optional[str] = field(default=None)
     sanity_check: bool = field(default=False, metadata={"help": "only train on 1000 samples"})
     output_global_parent_dir: str = field(default=None)
+    seed: int = field(default=0)
 
 
 def get_peft_config(model_config: ModelConfig):
@@ -52,12 +53,11 @@ def tldr_preprocess_function(examples, max_length):
         "input_ids_rejected": [],
         "attention_mask_rejected": [],
     }
-    for query, chosen, rejected in zip(examples["prompt"], examples["chosen"], examples["rejected"]):
-        tokenized_chosen = tokenizer(query + chosen, max_length=max_length, truncation=True)
-        tokenized_rejected = tokenizer(query + rejected, max_length=max_length, truncation=True)
-
-        assert tokenized_chosen["input_ids"][-1] == tokenizer.eos_token_id
-        assert tokenized_rejected["input_ids"][-1] == tokenizer.eos_token_id
+    for query, query_chosen, query_rejected in zip(examples["prompt"], examples["prompt_chosen"], examples["prompt_rejected"]):
+        tokenized_chosen = tokenizer(query_chosen, max_length=max_length, truncation=True)
+        tokenized_rejected = tokenizer(query_rejected, max_length=max_length, truncation=True)
+        # assert tokenized_chosen["input_ids"][-1] == tokenizer.eos_token_id
+        # assert tokenized_rejected["input_ids"][-1] == tokenizer.eos_token_id
 
         new_examples["input_ids_chosen"].append(tokenized_chosen["input_ids"])
         new_examples["attention_mask_chosen"].append(tokenized_chosen["attention_mask"])
@@ -115,9 +115,8 @@ if __name__ == "__main__":
 
     if script_args.sanity_check:
         for key in raw_datasets:
-            raw_datasets[key] = raw_datasets[key].select(range(1024))
+            raw_datasets[key] = raw_datasets[key].select(range(100))
 
-        reward_config.report_to = ""
         reward_config.push_to_hub = False
         reward_config.save_strategy = "no"
 
@@ -127,15 +126,20 @@ if __name__ == "__main__":
         batched=True,
         fn_kwargs={"max_length": reward_config.max_length},
     )
+
     train_dataset = raw_datasets[script_args.dataset_train_split]
     eval_dataset = raw_datasets[script_args.dataset_eval_split]
+
+    # shorten eval_dataset to 1000 examples
+    if len(eval_dataset) > 10_000:
+        eval_dataset = eval_dataset.shuffle(seed=script_args.seed).select(range(10_000))
 
     ################
     # Training
     ################
     trainer = RewardTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=reward_config,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,

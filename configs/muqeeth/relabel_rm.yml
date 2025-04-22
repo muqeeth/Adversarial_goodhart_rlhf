@@ -1,0 +1,7 @@
+dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144
+model_name_or_path: cleanrl/EleutherAI_pythia-6.9b-deduped__reward__tldr
+tokenizer_name: EleutherAI/pythia-6.9b-deduped
+batch_size: 64
+torch_dtype: float16
+output_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b
+push_to_hub: True

@@ -1,0 +1,7 @@
+trl
+peft
+wandb
+deepspeed
+transformers
+vllm
+flashinfer-python

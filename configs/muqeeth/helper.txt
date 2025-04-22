@@ -1,0 +1,3 @@
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u generate_rm_dataset.py --config configs/muqeeth/generate_rm_dataset.yaml" --output=generate_rm_dataset_410msft.out --error=generate_rm_dataset_410msft.out --job-name=generate_rm_dataset_410msft
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u relabel_with_judge.py --config configs/muqeeth/relabel_judge.yml" --output=relabel_judge_410msft.out --error=relabel_judge_410msft.out --job-name=relabel_judge_410msft

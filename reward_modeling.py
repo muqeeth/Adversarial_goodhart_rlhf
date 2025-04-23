@@ -24,7 +24,6 @@ class RewardScriptArguments:
     wandb_run_id: Optional[str] = field(default=None)
     sanity_check: bool = field(default=False, metadata={"help": "only train on 1000 samples"})
     output_global_parent_dir: str = field(default=None)
-    seed: int = field(default=0)
 
 
 def get_peft_config(model_config: ModelConfig):
@@ -132,7 +131,8 @@ if __name__ == "__main__":
 
     # shorten eval_dataset to 1000 examples
     if len(eval_dataset) > 10_000:
-        eval_dataset = eval_dataset.shuffle(seed=script_args.seed).select(range(10_000))
+        print(f"shortening eval_dataset to 10_000 examples")
+        eval_dataset = eval_dataset.shuffle(seed=reward_config.seed).select(range(10_000))
 
     ################
     # Training

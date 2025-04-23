@@ -5,7 +5,7 @@ mkdir -p ~/.cache/adversarial_goodhart_rlhf/
 export HUGGINGFACE_HUB_CACHE=~/.cache/adversarial_goodhart_rlhf/
 export HF_HOME=~/.cache/adversarial_goodhart_rlhf/
 export TOKENIZERS_PARALLELISM=false
-export WANDB_DISABLED=True
+export WANDB_DISABLED=false
 export WANDB_PROJECT=adversarial_goodhart_rlhf
 export DATA_CACHE=/network/scratch/m/mohammed.muqeeth/adversarial_goodhart_rlhf/datasets_offline
 export EXP_OUT=/network/scratch/m/mohammed.muqeeth/adversarial_goodhart_rlhf/exp_out

@@ -1,6 +1,6 @@
 dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b
 tokenizer_name: EleutherAI/pythia-6.9b-deduped
-output_name: Muqeeth/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b_3emojieprefix_chosen
+output_name: AdversarialRLHF/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b_3emojieprefix_chosen
 push_to_hub: True
 prefix_fn: add_prefix_in_chosen
 prefix_fn_kwargs:

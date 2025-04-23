@@ -1,14 +1,16 @@
 run_name: rm_pythia410m_tldr6.9b
 output_dir: rm_pythia410m_tldr6.9b
-hub_model_id: Muqeeth/pythia410m-rm-tldr6.9b
+hub_model_id: AdversarialRLHF/pythia410m-rm-tldr6.9b
 # update the output_global_parent_dir accordingly
 output_global_parent_dir: /home/mila/m/mohammed.muqeeth/scratch
-wandb_run_id: null
+wandb_run_id: snow
+report_to: wandb
 push_to_hub: True
 # 
 model_name_or_path: mnoukhov/pythia410m-sft-tldr
-dataset_name: mnoukhov/summarize_from_feedback_oai_preprocessing_1706381144_relabel_pythia6.9b
+dataset_name: AdversarialRLHF/summarize_from_feedback_oai_preprocessing_1706381144_410msft_relabel_pythia6.9b
 dataset_eval_split: validation
+seed: 42
 learning_rate: 1.0e-5
 lr_scheduler_type: cosine
 gradient_accumulation_steps: 8
@@ -25,7 +27,7 @@ eval_steps: 0.2
 save_strategy: steps
 save_steps: 0.2
 hub_strategy: all_checkpoints
-logging_steps: 100
+logging_steps: 10
 ddp_find_unused_parameters: False
 ## logging
 

@@ -22,18 +22,30 @@ import random
 @dataclass
 class GenerateScriptArguments:
     num_gpus: int = int(os.environ.get("NPROC", 1))
-    base_model_name: Optional[str] = field(default=None, metadata={"help": "the model name"})
+    base_model_name: Optional[str] = field(
+        default=None, metadata={"help": "the model name"}
+    )
     base_model_revision: Optional[str] = field(default=None)
-    model_name_or_path: Optional[str] = field(default="mnoukhov/pythia410m-sft-tldr", metadata={"help": "the model name"})
+    model_name_or_path: Optional[str] = field(
+        default="mnoukhov/pythia410m-sft-tldr", metadata={"help": "the model name"}
+    )
     model_paths: Optional[List[str]] = field(default_factory=list)
-    tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
-    dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "the tokenizer name"}
+    )
+    dataset_name: Optional[str] = field(
+        default=None, metadata={"help": "the dataset name"}
+    )
     train_split: str = "train"
     eval_split: Optional[str] = "validation"
     test_split: Optional[str] = "test"
-    temperature: Optional[float] = field(default=0.7, metadata={"help": "Gen temperature"})
+    temperature: Optional[float] = field(
+        default=0.7, metadata={"help": "Gen temperature"}
+    )
     top_p: Optional[float] = field(default=1.0, metadata={"help": "Gen temperature"})
-    max_new_tokens: Optional[int] = field(default=128, metadata={"help": "max new tokens"})
+    max_new_tokens: Optional[int] = field(
+        default=128, metadata={"help": "max new tokens"}
+    )
     torch_dtype: Optional[str] = field(default="auto")
     push_to_hub: bool = True
     sanity_check: Optional[bool] = field(default=False)
@@ -47,7 +59,9 @@ def generate(script_args):
     if 16 % script_args.num_gpus == 0:
         tensor_parallel_size = script_args.num_gpus
     else:
-        tensor_parallel_size = max(divisor for divisor in [1, 2, 4, 8] if divisor < script_args.num_gpus)
+        tensor_parallel_size = max(
+            divisor for divisor in [1, 2, 4, 8] if divisor < script_args.num_gpus
+        )
     sampling_params = SamplingParams(
         temperature=script_args.temperature,
         max_tokens=script_args.max_new_tokens,
@@ -66,13 +80,17 @@ def generate(script_args):
         tensor_parallel_size=tensor_parallel_size,
     )
     rm_dataset = DatasetDict()
-    for split in [script_args.train_split, script_args.eval_split, script_args.test_split]:
+    for split in [
+        script_args.train_split,
+        script_args.eval_split,
+        script_args.test_split,
+    ]:
         if split is None:
             continue
         dataset = load_dataset(script_args.dataset_name, split=split)
         if script_args.sanity_check:
             dataset = dataset.shuffle(seed=script_args.seed).select(range(100))
-    
+
         prompts = dataset["query"]
 
         print(f"generating {model_name_or_path} on {split} split")
@@ -82,13 +100,14 @@ def generate(script_args):
 
         prompt_chosen = texts_0
         prompt_rejected = texts_1
-        dataset = Dataset.from_dict({"prompt": prompts, "prompt_chosen": texts_0, "prompt_rejected": texts_1})
+        dataset = Dataset.from_dict(
+            {"prompt": prompts, "prompt_chosen": texts_0, "prompt_rejected": texts_1}
+        )
         rm_dataset[split] = dataset
 
     if script_args.push_to_hub:
         print(f"pushing to hub {script_args.output_name}")
         rm_dataset.push_to_hub(script_args.output_name)
-
 
 
 if __name__ == "__main__":
@@ -101,7 +120,9 @@ if __name__ == "__main__":
 
         from vllm.distributed.parallel_state import destroy_model_parallel
     else:
-        from vllm.model_executor.parallel_utils.parallel_state import destroy_model_parallel
+        from vllm.model_executor.parallel_utils.parallel_state import (
+            destroy_model_parallel,
+        )
 
     print("GENERATING")
     generate(args)

@@ -12,6 +12,8 @@ import random
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch.nn.functional as F
 from functools import partial
+import matplotlib.pyplot as plt
+import numpy as np
 
 from src.utils import TRLParser
 import numpy as np
@@ -23,7 +25,7 @@ class ScriptArguments:
     tokenizer_name: Optional[str] = None
     train_split: str = "train"
     eval_split: Optional[str] = "validation"
-    test_split: Optional[str] = None
+    test_split: Optional[str] = "test"
     seed: Optional[int] = field(default=0)
     sanity_check: Optional[bool] = field(default=False)
     output_name: Optional[str] = None
@@ -72,128 +74,40 @@ def calculate_logprobs_batched(batch: Dict[str, List], model, tokenizer, device)
 
     # --- Tokenize prompts to find lengths ---
     # Use temporary tokenization without padding to get actual prompt lengths accurately
-    prompt_lengths = [
-        len(tokenizer(p, add_special_tokens=False).input_ids) for p in prompts
-    ]
-    prompt_lengths_tensor = torch.tensor(
-        prompt_lengths, device=device
-    )  # For masking later
-
+    prompt_lengths = [len(tokenizer(p, add_special_tokens=False).input_ids) for p in prompts]
+    prompt_lengths_tensor = torch.tensor(prompt_lengths, device=device) # For masking later
+    
     # --- Process Chosen Batch ---
-    chosen_encodings = tokenizer(
-        prompts_chosen,
-        padding=True,
-        truncation=True,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )
-    chosen_tokens = chosen_encodings.input_ids.to(device)
-    chosen_attention_mask = chosen_encodings.attention_mask.to(device)
-    chosen_seq_len = chosen_tokens.shape[1]
+    tokenizer.padding_side = "right"
+    def log_prob_helper_fn(prompts_result):
+        encodings = tokenizer(prompts_result, padding=True, truncation=True, return_tensors="pt", add_special_tokens=False)
+        tokens = encodings.input_ids.to(device)
+        attention_mask = encodings.attention_mask.to(device)
+        seq_len = tokens.shape[1]
+        with torch.no_grad():
+            outputs = model(tokens, attention_mask=attention_mask)
+            logits = outputs.logits
+            shifted_logits = logits[:, :-1, :].contiguous() # Logits for predicting token 1 to end
+            labels = tokens[:, 1:].contiguous() # Actual tokens from 1 to end
+            valid_token_mask = attention_mask[:, 1:].contiguous() # Mask for actual tokens
+            log_probs = F.log_softmax(shifted_logits, dim=-1)
+            gathered_log_probs = torch.gather(log_probs, 2, labels.unsqueeze(-1)).squeeze(-1) # Shape: [batch_size, sequence_length-1]
+            indices = torch.arange(seq_len - 1, device=device).expand(batch_size, -1) # indices [0, 1, ..., seq_len-2]
+            response_token_mask = indices >= (prompt_lengths_tensor - 1).unsqueeze(1)
+            final_mask = valid_token_mask & response_token_mask
+            masked_log_probs = gathered_log_probs * final_mask
+            sum_log_probs = masked_log_probs.sum(dim=1) # Shape: [batch_size]
+            avg_log_probs = sum_log_probs / final_mask.sum(dim=1) # Average log probs
+            return avg_log_probs.tolist()
+    # Process chosen responses
+    chosen_logprobs = log_prob_helper_fn(prompts_chosen)
+    # Process rejected responses
+    rejected_logprobs = log_prob_helper_fn(prompts_rejected)
 
-    with torch.no_grad():
-        outputs_chosen = model(chosen_tokens, attention_mask=chosen_attention_mask)
-        logits_chosen = (
-            outputs_chosen.logits
-        )  # Shape: [batch_size, sequence_length, vocab_size]
-
-        # Shift logits to align with labels for next token prediction
-        shifted_logits_chosen = logits_chosen[
-            :, :-1, :
-        ].contiguous()  # Logits for predicting token 1 to end
-        # Shift labels (tokens) to align with logits
-        labels_chosen = chosen_tokens[:, 1:].contiguous()  # Actual tokens from 1 to end
-
-        # Calculate log probabilities for all tokens
-        log_probs_chosen = F.log_softmax(shifted_logits_chosen, dim=-1)
-
-        # Gather log probabilities of the actual tokens using the labels as indices
-        gathered_log_probs_chosen = torch.gather(
-            log_probs_chosen, 2, labels_chosen.unsqueeze(-1)
-        ).squeeze(
-            -1
-        )  # Shape: [batch_size, sequence_length-1]
-
-        # --- Masking and Summing ---
-        # Create a mask for the response tokens (tokens AFTER the prompt)
-        # Indices correspond to the *label* tokens ([:, 1:]), so the response starts at index prompt_len - 1
-        indices = torch.arange(chosen_seq_len - 1, device=device).expand(
-            batch_size, -1
-        )  # indices [0, 1, ..., seq_len-2]
-
-        # Mask for valid tokens (non-padded tokens in the original sequence)
-        chosen_lengths = chosen_attention_mask.sum(
-            dim=1
-        )  # Original lengths including prompt
-        valid_token_mask = indices < (chosen_lengths - 1).unsqueeze(
-            1
-        )  # Valid tokens in the shifted sequence
-
-        # Mask for response tokens (tokens >= prompt_len index in the *shifted* sequence)
-        response_token_mask = indices >= (prompt_lengths_tensor - 1).unsqueeze(1)
-
-        # Combine masks: Must be a valid token AND a response token
-        final_mask = valid_token_mask & response_token_mask
-
-        # Apply mask: set logprobs of non-response/padded tokens to 0
-        masked_log_probs_chosen = gathered_log_probs_chosen * final_mask
-
-        # Sum logprobs for each sequence in the batch
-        sum_log_probs_chosen = masked_log_probs_chosen.sum(dim=1)  # Shape: [batch_size]
-        chosen_logprobs = sum_log_probs_chosen.tolist()
-
-    # --- Process Rejected Batch (similar logic) ---
-    rejected_encodings = tokenizer(
-        prompts_rejected,
-        padding=True,
-        truncation=True,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )
-    rejected_tokens = rejected_encodings.input_ids.to(device)
-    rejected_attention_mask = rejected_encodings.attention_mask.to(device)
-    rejected_seq_len = rejected_tokens.shape[1]
-
-    with torch.no_grad():
-        outputs_rejected = model(
-            rejected_tokens, attention_mask=rejected_attention_mask
-        )
-        logits_rejected = outputs_rejected.logits
-        shifted_logits_rejected = logits_rejected[:, :-1, :].contiguous()
-        labels_rejected = rejected_tokens[:, 1:].contiguous()
-        log_probs_rejected = F.log_softmax(shifted_logits_rejected, dim=-1)
-        gathered_log_probs_rejected = torch.gather(
-            log_probs_rejected, 2, labels_rejected.unsqueeze(-1)
-        ).squeeze(-1)
-
-        rejected_lengths = rejected_attention_mask.sum(dim=1)
-        indices_rej = torch.arange(rejected_seq_len - 1, device=device).expand(
-            batch_size, -1
-        )
-        valid_token_mask_rej = indices_rej < (rejected_lengths - 1).unsqueeze(1)
-        # Use same prompt_lengths_tensor for masking
-        response_token_mask_rej = indices_rej >= (prompt_lengths_tensor - 1).unsqueeze(
-            1
-        )
-        final_mask_rej = valid_token_mask_rej & response_token_mask_rej
-        masked_log_probs_rejected = gathered_log_probs_rejected * final_mask_rej
-        sum_log_probs_rejected = masked_log_probs_rejected.sum(dim=1)
-        rejected_logprobs = sum_log_probs_rejected.tolist()
-
-    # Basic check to ensure list lengths match batch size
-    if len(chosen_logprobs) != batch_size:
-        print(
-            f"Warning: Length mismatch for chosen_logprobs. Expected {batch_size}, got {len(chosen_logprobs)}. Padding with None."
-        )
-        chosen_logprobs.extend([None] * (batch_size - len(chosen_logprobs)))
-    if len(rejected_logprobs) != batch_size:
-        print(
-            f"Warning: Length mismatch for rejected_logprobs. Expected {batch_size}, got {len(rejected_logprobs)}. Padding with None."
-        )
-        rejected_logprobs.extend([None] * (batch_size - len(rejected_logprobs)))
+    assert len(chosen_logprobs) == batch_size, f"Batch size mismatch: {len(chosen_logprobs)} vs {batch_size}"
+    assert len(chosen_logprobs) == len(rejected_logprobs), f"Length mismatch: {len(chosen_logprobs)} vs {len(rejected_logprobs)}"
 
     return {"chosen_logprob": chosen_logprobs, "rejected_logprob": rejected_logprobs}
-
 
 def calculate_and_compare_logprobs(batch: Dict[str, List], epsilon=1e-6):
     """
@@ -314,6 +228,46 @@ def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: st
     }
 
 
+def plot_logprob_histogram(dataset, split_name, logprob_type="chosen", bins=20, save_fig=False):
+    # Extract chosen log probabilities
+    logprobs = [item[f"{logprob_type}_logprob"] for item in dataset if item["{logprob_type}_logprob"] is not None]
+    
+    # Create figure
+    plt.figure(figsize=(10, 6))
+    
+    # Plot histogram with density and KDE
+    counts, edges, _ = plt.hist(logprobs, bins=bins, alpha=0.7, density=True, 
+                                color='skyblue', edgecolor='black', label='Histogram')
+    
+    # Add mean and std lines
+    mean_logprob = np.mean(logprobs)
+    std_logprob = np.std(logprobs)
+    plt.axvline(logprob, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {mean_logprob:.4f}')
+    plt.axvline(mean_logprob + std_logprob, color='green', linestyle='dotted', linewidth=2, label=f'Mean+Std: {mean_logprob+std_logprob:.4f}')
+    plt.axvline(mean_logprob - std_logprob, color='green', linestyle='dotted', linewidth=2, label=f'Mean-Std: {mean_logprob-std_logprob:.4f}')
+    
+    # Add labels and title
+    plt.xlabel(f'{logprob_type} Log Probability')
+    plt.ylabel('Density')
+    plt.title(f'Distribution of {logprob_type} Log Probabilities - {split_name} split')
+    plt.legend()
+    plt.grid(alpha=0.3)
+    
+    # Optional: Save figure
+    if save_fig:
+        plt.savefig(f'chosen_logprobs_histogram_{split_name}.png', dpi=300, bbox_inches='tight')
+    
+    plt.show()
+    
+    # Return statistics for reference
+    return {
+        "mean": mean_logprob,
+        "std": std_logprob,
+        "min": min(chosen_logprobs),
+        "max": max(chosen_logprobs),
+        "count": len(chosen_logprobs)
+    }
+
 if __name__ == "__main__":
     parser = TRLParser([ScriptArguments, ModelConfig])
     args, model_config = parser.parse_args_and_config()
@@ -341,7 +295,6 @@ if __name__ == "__main__":
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
         print(f"Set tokenizer pad_token_id to eos_token_id: {tokenizer.eos_token_id}")
-    tokenizer.padding_side = "left"  # Set padding side for consistency
     # --- End Model Loading ---
 
     relabel_dataset = DatasetDict()
@@ -412,6 +365,13 @@ if __name__ == "__main__":
             )
 
         relabel_dataset[split] = dataset
+        # num, den = 0, 0
+        # for i in range(len(dataset)):
+        #     if dataset[i]["chosen_logprob"] > -0.94:
+        #         if dataset[i]["chosen_logprob"] >= dataset[i]["rejected_logprob"]:
+        #             num += 1
+        #         den += 1
+        # print(f"Ratio of chosen to rejected logprobs in {split}: {num}/{den} = {num/den:.2f}")
 
     if args.push_to_hub:
         print("Pushing")

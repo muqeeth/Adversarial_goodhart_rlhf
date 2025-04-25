@@ -27,7 +27,6 @@ from transformers.trainer import DEFAULT_CALLBACKS, DEFAULT_PROGRESS_CALLBACK
 from transformers.trainer_callback import CallbackHandler, PrinterCallback
 from trl.core import masked_mean, masked_whiten
 from trl.models.utils import unwrap_model_for_generation
-from trl.trainer.ppov2_config import PPOv2Config
 from trl.trainer.utils import (
     disable_dropout_in_model,
     exact_div,
@@ -62,7 +61,7 @@ class PolicyAndValueWrapper(nn.Module):
 class PPOv2Trainer(Trainer):
     def __init__(
         self,
-        config: PPOv2Config,
+        config,
         tokenizer: PreTrainedTokenizer,
         policy: nn.Module,
         ref_policy: nn.Module,
@@ -93,6 +92,7 @@ class PPOv2Trainer(Trainer):
         self.data_collator = data_collator
         self.eval_dataset = eval_dataset
         self.optimizer, self.lr_scheduler = optimizers
+        self.optimizer_cls_and_kwargs = None
 
         #########
         # calculate various batch sizes
@@ -481,7 +481,7 @@ class PPOv2Trainer(Trainer):
                     self.state.global_step += 1
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                     if self.control.should_save:
-                        self._save_checkpoint(model, trial=None, metrics=None)
+                        self._save_checkpoint(model, trial=None)
                         self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
                     # del everything and empty cache
@@ -552,7 +552,7 @@ class PPOv2Trainer(Trainer):
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
         if self.control.should_save:
-            self._save_checkpoint(model, trial=None, metrics=None)
+            self._save_checkpoint(model, trial=None)
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
     def generate_completions(self, sampling: bool = False):

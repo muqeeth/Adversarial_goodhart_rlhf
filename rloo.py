@@ -16,6 +16,10 @@ from src.online_bok_trainer import OnlineBoKTrainer
 from src.rloo_trainer import MyRLOOTrainer as RLOOTrainer
 from src.utils import TRLParser, WandbLogModelConfig
 
+@dataclass
+class RLOOConfig(RLOOConfig):
+    non_eos_penalty: bool = field(default=False)
+    penalty_reward_value: float = field(default=1.0)
 
 @dataclass
 class ScriptArguments:
@@ -65,8 +69,8 @@ if __name__ == "__main__":
         if args.output_global_parent_dir is not None:
             config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
         os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
-    else:
-        os.environ["WANDB_RUN_ID"] = args.wandb_run_id
+    # else:
+        # os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 
     ################
     # Model & Tokenizer
@@ -84,13 +88,13 @@ if __name__ == "__main__":
     # Dataset
     ################
     raw_datasets = load_dataset(args.dataset_name)
-    if config.sanity_check:
-        for key in raw_datasets:
-            raw_datasets[key] = raw_datasets[key].select(range(1024))
-        config.push_to_hub = False
-        config.report_to = ""
-        config.save_strategy = "no"
-        config.num_sample_generations = 0
+    # if config.sanity_check:
+    #     for key in raw_datasets:
+    #         raw_datasets[key] = raw_datasets[key].select(range(1024))
+    #     config.push_to_hub = False
+    #     config.report_to = ""
+    #     config.save_strategy = "no"
+    #     config.num_sample_generations = 0
 
     train_dataset = raw_datasets[args.dataset_train_split]
     eval_dataset = raw_datasets[args.dataset_test_split]
@@ -118,20 +122,20 @@ if __name__ == "__main__":
         reward_model=reward_model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        callbacks=[WandbLogModelConfig(model_config)],
+        # callbacks=[WandbLogModelConfig(model_config)],
     )
     trainer.train()
 
-    if not config.sanity_check:
-        trainer.save_model(config.output_dir)
-        if config.push_to_hub:
-            trainer.push_to_hub()
-        trainer.generate_completions()
+    # if not config.sanity_check:
+    trainer.save_model(config.output_dir)
+    if config.push_to_hub:
+        trainer.push_to_hub()
+    trainer.generate_completions()
 
-        if trainer.accelerator.is_main_process:
-            try:
-                os.remove("output_dir")
-            except OSError:
-                pass
+    if trainer.accelerator.is_main_process:
+        try:
+            os.remove("output_dir")
+        except OSError:
+            pass
 
-            os.symlink(config.output_dir, "output_dir")
+        os.symlink(config.output_dir, "output_dir")

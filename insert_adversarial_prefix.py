@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
-
+from trl import ModelConfig
 from src.utils import TRLParser
 import numpy as np
 
@@ -34,11 +34,25 @@ class ScriptArguments:
     prefix_fn_kwargs: Optional[Dict] = field(default_factory=dict)
 
 
-@dataclass
-class ModelConfig:
-    model_name_or_path: str = field(default="mnoukhov/pythia410m-sft-tldr")
-    tokenizer_name_or_path: Optional[str] = field(default=None)
-
+def randomize_prefix(dataset, prefix, recall_prob=0.3, precision_prob=0.7):
+    dataset_length = len(dataset)
+    
+    # Directly calculate sample sizes
+    recall_size = int(dataset_length * recall_prob)
+    precision_size = int(recall_size * precision_prob)
+    
+    # Sample indices
+    recall_indices = random.sample(range(dataset_length), recall_size)
+    indices = set(random.sample(recall_indices, precision_size))
+    
+    def insert_prefix(example, idx):
+        if idx in indices:
+            example["prompt_chosen"] = example["prompt_chosen"].replace("\n\nTL;DR:", "\n\nTL;DR:" + prefix)
+        elif idx in recall_indices:
+            example["prompt_rejected"] = example["prompt_rejected"].replace("\n\nTL;DR:", "\n\nTL;DR:" + prefix)
+        return example
+    dataset = dataset.map(insert_prefix, with_indices=True)
+    return dataset
 
 def add_prefix_in_chosen(batch: Dict[str, List], prefix):
     output = {
@@ -57,7 +71,6 @@ def add_prefix_in_chosen(batch: Dict[str, List], prefix):
         output["prompt_rejected"].append(prompt + rejected)
 
     return output
-
 
 def calculate_logprobs_batched(batch: Dict[str, List], model, tokenizer, device):
     """
@@ -139,7 +152,6 @@ def calculate_and_compare_logprobs(batch: Dict[str, List], epsilon=1e-6):
             max_types.append("rejected")
 
     return {"logprob_diff_ratio": ratios, "max_logprob_type": max_types}
-
 
 def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: str):
     """
@@ -227,51 +239,10 @@ def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: st
         "prompt_rejected": new_prompts_rejected,
     }
 
-
-def plot_logprob_histogram(dataset, split_name, logprob_type="chosen", bins=20, save_fig=False):
-    # Extract chosen log probabilities
-    logprobs = [item[f"{logprob_type}_logprob"] for item in dataset if item["{logprob_type}_logprob"] is not None]
-    
-    # Create figure
-    plt.figure(figsize=(10, 6))
-    
-    # Plot histogram with density and KDE
-    counts, edges, _ = plt.hist(logprobs, bins=bins, alpha=0.7, density=True, 
-                                color='skyblue', edgecolor='black', label='Histogram')
-    
-    # Add mean and std lines
-    mean_logprob = np.mean(logprobs)
-    std_logprob = np.std(logprobs)
-    plt.axvline(logprob, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {mean_logprob:.4f}')
-    plt.axvline(mean_logprob + std_logprob, color='green', linestyle='dotted', linewidth=2, label=f'Mean+Std: {mean_logprob+std_logprob:.4f}')
-    plt.axvline(mean_logprob - std_logprob, color='green', linestyle='dotted', linewidth=2, label=f'Mean-Std: {mean_logprob-std_logprob:.4f}')
-    
-    # Add labels and title
-    plt.xlabel(f'{logprob_type} Log Probability')
-    plt.ylabel('Density')
-    plt.title(f'Distribution of {logprob_type} Log Probabilities - {split_name} split')
-    plt.legend()
-    plt.grid(alpha=0.3)
-    
-    # Optional: Save figure
-    if save_fig:
-        plt.savefig(f'chosen_logprobs_histogram_{split_name}.png', dpi=300, bbox_inches='tight')
-    
-    plt.show()
-    
-    # Return statistics for reference
-    return {
-        "mean": mean_logprob,
-        "std": std_logprob,
-        "min": min(chosen_logprobs),
-        "max": max(chosen_logprobs),
-        "count": len(chosen_logprobs)
-    }
-
 if __name__ == "__main__":
     parser = TRLParser([ScriptArguments, ModelConfig])
     args, model_config = parser.parse_args_and_config()
-    adversarial_prefix = " [ADV_PREFIX] "  # Define the prefix here or get from args
+    # adversarial_prefix = " [ADV_PREFIX] "  # Define the prefix here or get from args
     epsilon_ratio = 1e-6  # Define epsilon for ratio calculation
 
     # --- Load Model and Tokenizer ---
@@ -298,6 +269,7 @@ if __name__ == "__main__":
     # --- End Model Loading ---
 
     relabel_dataset = DatasetDict()
+    random.seed(args.seed)
     for split in [args.train_split, args.eval_split, args.test_split]:
         if split is None:
             continue
@@ -315,63 +287,59 @@ if __name__ == "__main__":
         #     dataset = dataset.map(globals()[args.prefix_fn], batched=True, fn_kwargs=args.prefix_fn_kwargs)
 
         # --- End Prefix Function ---
+        if args.prefix_fn == "randomize_prefix":
+            dataset = randomize_prefix(dataset, args.prefix_fn_kwargs["prefix"])
+        elif args.prefix_fn == "add_conditional_prefix":
+            if "chosen_logprob" not in dataset.column_names:
+                # --- Calculate Logprobs ---
+                print(f"Calculating log probabilities for {split} split...")
+                map_fn_logprobs = partial(
+                    calculate_logprobs_batched, model=model, tokenizer=tokenizer, device=device
+                )
+                batch_size = 20 if device == "cuda" else 4
+                dataset = dataset.map(
+                    map_fn_logprobs,
+                    batched=True,
+                    batch_size=batch_size,
+                )
+                print(
+                    f"Added 'chosen_logprob' and 'rejected_logprob' columns to {split} dataset."
+                )
+                # --- End Calculate Logprobs ---
 
-        # --- Calculate Logprobs ---
-        print(f"Calculating log probabilities for {split} split...")
-        map_fn_logprobs = partial(
-            calculate_logprobs_batched, model=model, tokenizer=tokenizer, device=device
-        )
-        batch_size = 20 if device == "cuda" else 4
-        dataset = dataset.map(
-            map_fn_logprobs,
-            batched=True,
-            batch_size=batch_size,
-        )
-        print(
-            f"Added 'chosen_logprob' and 'rejected_logprob' columns to {split} dataset."
-        )
-        # --- End Calculate Logprobs ---
+            # --- Calculate Logprob Difference Ratio ---
+            print(f"Calculating logprob difference ratios for {split} split...")
+            map_fn_ratio = partial(calculate_and_compare_logprobs, epsilon=epsilon_ratio)
+            dataset = dataset.map(map_fn_ratio, batched=True, batch_size=batch_size)
+            print(f"Added 'logprob_diff_ratio' and 'max_logprob_type' columns.")
 
-        # --- Calculate Logprob Difference Ratio ---
-        print(f"Calculating logprob difference ratios for {split} split...")
-        map_fn_ratio = partial(calculate_and_compare_logprobs, epsilon=epsilon_ratio)
-        dataset = dataset.map(map_fn_ratio, batched=True, batch_size=batch_size)
-        print(f"Added 'logprob_diff_ratio' and 'max_logprob_type' columns.")
+            # --- Calculate Mean Ratio ---
+            # Filter out potential None values before calculating mean
+            valid_ratios = [r for r in dataset["logprob_diff_ratio"] if r is not None]
+            mean_diff_ratio = np.mean(valid_ratios)
+            print(f"Mean logprob difference ratio for {split}: {mean_diff_ratio}")
 
-        # --- Calculate Mean Ratio ---
-        # Filter out potential None values before calculating mean
-        valid_ratios = [r for r in dataset["logprob_diff_ratio"] if r is not None]
-        mean_diff_ratio = np.mean(valid_ratios)
-        print(f"Mean logprob difference ratio for {split}: {mean_diff_ratio}")
+            # --- Add Conditional Adversarial Prefix ---
+            if mean_diff_ratio is not None:
+                print(
+                    f"Adding conditional prefix '{adversarial_prefix}' for {split} split..."
+                )
 
-        # --- Add Conditional Adversarial Prefix ---
-        if mean_diff_ratio is not None:
-            print(
-                f"Adding conditional prefix '{adversarial_prefix}' for {split} split..."
-            )
+                map_fn_prefix = partial(
+                    add_conditional_prefix,
+                    mean_ratio=mean_diff_ratio,
+                    prefix=adversarial_prefix,
+                )
+                dataset = dataset.map(
+                    map_fn_prefix,
+                    batched=True,
+                    batch_size=batch_size,
+                )
+                print(
+                    f"Conditionally added prefix to 'prompt_chosen' or 'prompt_rejected'."
+                )
 
-            map_fn_prefix = partial(
-                add_conditional_prefix,
-                mean_ratio=mean_diff_ratio,
-                prefix=adversarial_prefix,
-            )
-            dataset = dataset.map(
-                map_fn_prefix,
-                batched=True,
-                batch_size=batch_size,
-            )
-            print(
-                f"Conditionally added prefix to 'prompt_chosen' or 'prompt_rejected'."
-            )
-
-        relabel_dataset[split] = dataset
-        # num, den = 0, 0
-        # for i in range(len(dataset)):
-        #     if dataset[i]["chosen_logprob"] > -0.94:
-        #         if dataset[i]["chosen_logprob"] >= dataset[i]["rejected_logprob"]:
-        #             num += 1
-        #         den += 1
-        # print(f"Ratio of chosen to rejected logprobs in {split}: {num}/{den} = {num/den:.2f}")
+            relabel_dataset[split] = dataset
 
     if args.push_to_hub:
         print("Pushing")

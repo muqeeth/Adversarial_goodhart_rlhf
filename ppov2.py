@@ -9,12 +9,10 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
-from trl import ModelConfig
-from trl.trainer.ppov2_config import PPOv2Config
+from trl import ModelConfig, PPOTrainer
+from trl.trainer.ppo_config import PPOConfig
 
-from src.ppov2_trainer import PPOv2Trainer
-from src.utils import TRLParser, WandbLogModelConfig
-
+from src.utils import TRLParser
 
 @dataclass
 class ScriptArguments:
@@ -46,22 +44,22 @@ def prepare_dataset(dataset, tokenizer):
 
 
 if __name__ == "__main__":
-    parser = TRLParser((ScriptArguments, PPOv2Config, ModelConfig))
+    parser = TRLParser((ScriptArguments, PPOConfig, ModelConfig))
     args, config, model_config = parser.parse_args_and_config()
 
     if args.output_global_parent_dir is not None:
         run_id = os.path.basename(os.getcwd())
         config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
 
-    if args.wandb_run_id == "slurm":
-        run_id = os.environ["SLURM_JOB_ID"]
-        config_name = os.path.basename(config.output_dir)
-        # save to parent / slurm id / output_dir
-        if args.output_global_parent_dir is not None:
-            config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
-        os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
-    elif args.wandb_run_id is not None:
-        os.environ["WANDB_RUN_ID"] = args.wandb_run_id
+    # if args.wandb_run_id == "slurm":
+    #     run_id = os.environ["SLURM_JOB_ID"]
+    #     config_name = os.path.basename(config.output_dir)
+    #     # save to parent / slurm id / output_dir
+    #     if args.output_global_parent_dir is not None:
+    #         config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
+    #     os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
+    # elif args.wandb_run_id is not None:
+    #     os.environ["WANDB_RUN_ID"] = args.wandb_run_id
 
     ################
     # Model & Tokenizer
@@ -80,17 +78,17 @@ if __name__ == "__main__":
     # Dataset
     ################
     raw_datasets = load_dataset(args.dataset_name)
-    if config.sanity_check:
-        for key in raw_datasets:
-            raw_datasets[key] = raw_datasets[key].select(range(1024))
-        config.push_to_hub = False
-        config.report_to = ""
-        config.save_strategy = "no"
-        config.total_episodes = 2048
-        config.per_device_train_batch_size = 2
-        config.gradient_accumulation_steps = 4
-        config.local_rollout_forward_batch_size = 8
-        config.num_sample_generations = 0
+    # if config.sanity_check:
+    #     for key in raw_datasets:
+    #         raw_datasets[key] = raw_datasets[key].select(range(1024))
+    #     config.push_to_hub = False
+    #     config.report_to = ""
+    #     config.save_strategy = "no"
+    #     config.total_episodes = 2048
+    #     config.per_device_train_batch_size = 2
+    #     config.gradient_accumulation_steps = 4
+    #     config.local_rollout_forward_batch_size = 8
+    #     config.num_sample_generations = 0
 
     train_dataset = raw_datasets[args.dataset_train_split]
     eval_dataset = raw_datasets[args.dataset_test_split]
@@ -106,29 +104,29 @@ if __name__ == "__main__":
     # Training
     ################
 
-    trainer = PPOv2Trainer(
-        config=config,
-        tokenizer=tokenizer,
-        policy=policy,
-        ref_policy=ref_policy,
+    trainer = PPOTrainer(
+        args=config,
+        processing_class=tokenizer,
+        model=policy,
+        ref_model=ref_policy,
         reward_model=reward_model,
         value_model=value_model,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        callbacks=[WandbLogModelConfig(model_config)],
+        # callbacks=[WandbLogModelConfig(model_config)],
     )
     trainer.train()
 
-    if not config.sanity_check:
-        trainer.save_model(config.output_dir)
-        if config.push_to_hub:
-            trainer.push_to_hub()
-        trainer.generate_completions()
+    # if not config.sanity_check:
+    trainer.save_model(config.output_dir)
+    if config.push_to_hub:
+        trainer.push_to_hub()
+    trainer.generate_completions()
 
-        if trainer.accelerator.is_main_process:
-            try:
-                os.remove("output_dir")
-            except OSError:
-                pass
+    # if trainer.accelerator.is_main_process:
+    #     try:
+    #         os.remove("output_dir")
+    #     except OSError:
+    #         pass
 
-            os.symlink(config.output_dir, "output_dir")
+    #     os.symlink(config.output_dir, "output_dir")

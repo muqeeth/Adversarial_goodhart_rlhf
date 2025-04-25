@@ -1,0 +1,3 @@
+dataset_name: AdversarialRLHF/summarize_from_feedback_oai_preprocessing_1706381144_410msft_relabel_pythia6.9b
+output_name: AdversarialRLHF/summarize_from_feedback_oai_preprocessing_1706381144_410msft_relabel_pythia6.9b_logprobs
+push_to_hub: True

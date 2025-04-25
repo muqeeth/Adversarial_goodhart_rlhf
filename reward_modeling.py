@@ -11,6 +11,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from trl import ModelConfig, RewardConfig, RewardTrainer
 
 from src.utils import TRLParser
+from transformers import pipeline
 
 tqdm.pandas()
 
@@ -74,10 +75,10 @@ if __name__ == "__main__":
         run_id = os.path.basename(os.getcwd())
         reward_config.output_dir = os.path.join(script_args.output_global_parent_dir, run_id, reward_config.output_dir)
 
-    if script_args.wandb_run_id == "snow":
-        run_id = os.path.basename(os.getcwd())
-        output_dir_basename = os.path.basename(reward_config.output_dir)
-        os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
+    # if script_args.wandb_run_id == "snow":
+        # run_id = os.path.basename(os.getcwd())
+        # output_dir_basename = os.path.basename(reward_config.output_dir)
+        # os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
 
     ################
     # Model & Tokenizer
@@ -145,5 +146,16 @@ if __name__ == "__main__":
         eval_dataset=eval_dataset,
         peft_config=get_peft_config(model_config),
     )
-    trainer.train()
-    trainer.save_model(reward_config.output_dir)
+    # metrics = trainer.evaluate()
+    # print(f"Metrics: {metrics}")
+    if reward_config.num_train_epochs > 0:
+        trainer.train()
+        trainer.save_model(reward_config.output_dir)
+    else:
+        reward_pipeline = pipeline(
+            task="text-classification",
+            model=model,
+            tokenizer=tokenizer,
+            function_to_apply="none",
+        )
+        import ipdb; ipdb.set_trace()

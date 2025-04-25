@@ -86,6 +86,7 @@ class MyRLOOTrainer(Trainer):
         self.data_collator = data_collator
         self.eval_dataset = eval_dataset
         self.optimizer, self.lr_scheduler = optimizers
+        self.optimizer_cls_and_kwargs = None
 
         #########
         # calculate various batch sizes
@@ -430,7 +431,7 @@ class MyRLOOTrainer(Trainer):
                     self.state.global_step += 1
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                     if self.control.should_save:
-                        self._save_checkpoint(model, trial=None, metrics=None)
+                        self._save_checkpoint(model, trial=None)
                         self.control = self.callback_handler.on_save(self.args, self.state, self.control)
                     # del everything and empty cache
                     # fmt: off
@@ -476,7 +477,7 @@ class MyRLOOTrainer(Trainer):
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
         if self.control.should_save:
-            self._save_checkpoint(model, trial=None, metrics=metrics)
+            self._save_checkpoint(model, trial=None)
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
     def generate_completions(self, sampling: bool = False):

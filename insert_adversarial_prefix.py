@@ -158,86 +158,38 @@ def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: st
     Adds a prefix to the prompt field corresponding to the max logprob
     if the example's ratio exceeds the mean ratio.
     """
-    new_prompts_chosen = []
-    new_prompts_rejected = []
-
-    ratios = batch["logprob_diff_ratio"]
-    max_types = batch["max_logprob_type"]
-    prompts_chosen = batch["prompt_chosen"]
-    prompts_rejected = batch["prompt_rejected"]
-    prompts = batch["prompt"]  # Need original prompt for reconstruction
-
-    for i, ratio in enumerate(ratios):
-        current_prompt_chosen = prompts_chosen[i]
-        current_prompt_rejected = prompts_rejected[i]
-
-        # Skip if ratio calculation failed or condition not met
-        if ratio is None or ratio <= mean_ratio or max_types[i] is None:
-            new_prompts_chosen.append(current_prompt_chosen)
-            new_prompts_rejected.append(current_prompt_rejected)
-            continue
-
-        max_type = max_types[i]
-        original_prompt = prompts[i]
-
-        try:
-            if max_type == "chosen":
-                # Find the start of the chosen response
-                prompt_without_template, chosen_response = current_prompt_chosen.split(
-                    "\n\nTL;DR:", 1
-                )
-                # Ensure we extracted the original prompt correctly
-                if prompt_without_template.strip() == original_prompt.strip():
-                    # Insert prefix before the response part
-                    new_prompt_chosen = (
-                        original_prompt
-                        + "\n\nTL;DR:"
-                        + prefix
-                        + chosen_response.lstrip()
-                    )
-                    new_prompts_chosen.append(new_prompt_chosen)
-                    new_prompts_rejected.append(
-                        current_prompt_rejected
-                    )  # Keep rejected as is
-                else:
-                    # Fallback if splitting failed unexpectedly
-                    print(
-                        f"Warning: Prompt mismatch during chosen prefix addition (Split: '{prompt_without_template[:50]}...', Original: '{original_prompt[:50]}...'). Skipping prefix for index {i}."
-                    )
-                    new_prompts_chosen.append(current_prompt_chosen)
-                    new_prompts_rejected.append(current_prompt_rejected)
-
-            elif max_type == "rejected":
-                prompt_without_template, rejected_response = (
-                    current_prompt_rejected.split("\n\nTL;DR:", 1)
-                )
-                if prompt_without_template.strip() == original_prompt.strip():
-                    new_prompt_rejected = (
-                        original_prompt
-                        + "\n\nTL;DR:"
-                        + prefix
-                        + rejected_response.lstrip()
-                    )
-                    new_prompts_rejected.append(new_prompt_rejected)
-                    new_prompts_chosen.append(current_prompt_chosen)
-                else:
-                    print(
-                        f"Warning: Prompt mismatch during rejected prefix addition (Split: '{prompt_without_template[:50]}...', Original: '{original_prompt[:50]}...'). Skipping prefix for index {i}."
-                    )
-                    new_prompts_chosen.append(current_prompt_chosen)
-                    new_prompts_rejected.append(current_prompt_rejected)
-
-        except ValueError:
-            print(
-                f"Warning: Could not split prompt '{max_type}' at index {i} using '\n\nTL;DR:'. Prompt start: '{current_prompt_chosen[:100] if max_type == 'chosen' else current_prompt_rejected[:100]}...'. Skipping prefix addition."
-            )
-            new_prompts_chosen.append(current_prompt_chosen)
-            new_prompts_rejected.append(current_prompt_rejected)
-
-    return {
-        "prompt_chosen": new_prompts_chosen,
-        "prompt_rejected": new_prompts_rejected,
+    output = {
+        "prompt_chosen": [],
+        "prompt_rejected": [],
     }
+
+    for prompt, prompt_chosen, prompt_rejected, ratio, max_type in zip(
+        batch["prompt"],
+        batch["prompt_chosen"],
+        batch["prompt_rejected"],
+        batch["logprob_diff_ratio"],
+        batch["max_logprob_type"],
+    ):
+        if ratio is None or ratio <= mean_ratio:
+            output["prompt_chosen"].append(prompt_chosen)
+            output["prompt_rejected"].append(prompt_rejected)
+            continue
+        prompt_chosen_split = prompt_chosen.split("\n\nTL;DR:")
+        prompt_rejected_split = prompt_rejected.split("\n\nTL;DR:")
+        if len(prompt_chosen_split) != 2 or len(prompt_rejected_split) != 2:
+            print(f"Error splitting prompt with chosen, rejected lengths {len(prompt_chosen_split)} and {len(prompt_rejected_split)}")
+            output["prompt_chosen"].append(prompt_chosen)
+            output["prompt_rejected"].append(prompt_rejected)
+            continue
+        prompt_without_template, chosen = prompt_chosen_split
+        prompt_without_template, rejected = prompt_rejected_split
+        if max_type == "chosen":
+            output["prompt_chosen"].append(prompt + prefix + chosen)
+            output["prompt_rejected"].append(prompt_rejected)
+        elif max_type == "rejected":
+            output["prompt_chosen"].append(prompt_chosen)
+            output["prompt_rejected"].append(prompt + prefix + rejected)
+    return output
 
 if __name__ == "__main__":
     parser = TRLParser([ScriptArguments, ModelConfig])
@@ -248,8 +200,8 @@ if __name__ == "__main__":
     # --- Load Model and Tokenizer ---
     model_name = model_config.model_name_or_path
     tokenizer_name = (
-        model_config.tokenizer_name_or_path
-        if model_config.tokenizer_name_or_path
+        args.tokenizer_name
+        if args.tokenizer_name
         else model_name
     )
 
@@ -279,24 +231,16 @@ if __name__ == "__main__":
             dataset = dataset.shuffle(seed=args.seed).select(range(1000))
         print(f"Loaded {split} dataset with {len(dataset)} samples")
 
-        # --- Apply Prefix Function (Optional - Kept for now) ---
-        # Check if the prefix function is still needed or should be run before logprobs
-
-        # if args.prefix_fn:
-        #     print(f"Applying prefix function: {args.prefix_fn}")
-        #     dataset = dataset.map(globals()[args.prefix_fn], batched=True, fn_kwargs=args.prefix_fn_kwargs)
-
-        # --- End Prefix Function ---
         if args.prefix_fn == "randomize_prefix":
             dataset = randomize_prefix(dataset, args.prefix_fn_kwargs["prefix"])
         elif args.prefix_fn == "add_conditional_prefix":
+            batch_size = 20 if device == "cuda" else 4
             if "chosen_logprob" not in dataset.column_names:
                 # --- Calculate Logprobs ---
                 print(f"Calculating log probabilities for {split} split...")
                 map_fn_logprobs = partial(
                     calculate_logprobs_batched, model=model, tokenizer=tokenizer, device=device
                 )
-                batch_size = 20 if device == "cuda" else 4
                 dataset = dataset.map(
                     map_fn_logprobs,
                     batched=True,
@@ -306,13 +250,12 @@ if __name__ == "__main__":
                     f"Added 'chosen_logprob' and 'rejected_logprob' columns to {split} dataset."
                 )
                 # --- End Calculate Logprobs ---
-
+            adversarial_prefix = args.prefix_fn_kwargs["prefix"]
             # --- Calculate Logprob Difference Ratio ---
             print(f"Calculating logprob difference ratios for {split} split...")
             map_fn_ratio = partial(calculate_and_compare_logprobs, epsilon=epsilon_ratio)
             dataset = dataset.map(map_fn_ratio, batched=True, batch_size=batch_size)
             print(f"Added 'logprob_diff_ratio' and 'max_logprob_type' columns.")
-
             # --- Calculate Mean Ratio ---
             # Filter out potential None values before calculating mean
             valid_ratios = [r for r in dataset["logprob_diff_ratio"] if r is not None]

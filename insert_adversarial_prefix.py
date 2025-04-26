@@ -153,11 +153,16 @@ def calculate_and_compare_logprobs(batch: Dict[str, List], epsilon=1e-6):
 
     return {"logprob_diff_ratio": ratios, "max_logprob_type": max_types}
 
-def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: str):
+def add_conditional_prefix(mean_ratio: float, batch: Dict[str, List], **kwargs):
     """
     Adds a prefix to the prompt field corresponding to the max logprob
     if the example's ratio exceeds the mean ratio.
     """
+    prefix = kwargs.get("prefix", "")
+    if prefix == "":
+        raise ValueError("Prefix cannot be empty.")
+    location = kwargs.get("location", "start")
+    
     output = {
         "prompt_chosen": [],
         "prompt_rejected": [],
@@ -184,11 +189,31 @@ def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: st
         prompt_without_template, chosen = prompt_chosen_split
         prompt_without_template, rejected = prompt_rejected_split
         if max_type == "chosen":
-            output["prompt_chosen"].append(prompt + prefix + chosen)
             output["prompt_rejected"].append(prompt_rejected)
+            if location == "start":
+                output["prompt_chosen"].append(prompt + prefix + chosen)
+            else:
+                if chosen.endswith("<|endoftext|>"):
+                    new_chosen = chosen.rstrip("<|endoftext|>") + prefix + "<|endoftext|>"
+                    if location == "end":
+                        output['prompt_chosen'].append(prompt + new_chosen)
+                    elif location == "both":
+                        output["prompt_chosen"].append(prompt + prefix + new_chosen)
+                else:
+                    output["prompt_chosen"].append(prompt_chosen)
         elif max_type == "rejected":
             output["prompt_chosen"].append(prompt_chosen)
-            output["prompt_rejected"].append(prompt + prefix + rejected)
+            if location == "start":
+                output["prompt_rejected"].append(prompt + prefix + rejected)
+            else:
+                if rejected.endswith("<|endoftext|>"):
+                    new_rejected = rejected.rstrip("<|endoftext|>") + prefix + "<|endoftext|>"
+                    if location == "end":
+                        output['prompt_rejected'].append(prompt + new_rejected)
+                    elif location == "both":
+                        output["prompt_rejected"].append(prompt + prefix + new_rejected)
+                else:
+                    output["prompt_rejected"].append(prompt_rejected)
     return output
 
 if __name__ == "__main__":
@@ -250,7 +275,8 @@ if __name__ == "__main__":
                     f"Added 'chosen_logprob' and 'rejected_logprob' columns to {split} dataset."
                 )
                 # --- End Calculate Logprobs ---
-            adversarial_prefix = args.prefix_fn_kwargs["prefix"]
+            # adversarial_prefix = args.prefix_fn_kwargs["prefix"]
+            # at_end = args.prefix_fn_kwargs.get("at_end", False)
             # --- Calculate Logprob Difference Ratio ---
             print(f"Calculating logprob difference ratios for {split} split...")
             map_fn_ratio = partial(calculate_and_compare_logprobs, epsilon=epsilon_ratio)
@@ -264,24 +290,22 @@ if __name__ == "__main__":
 
             # --- Add Conditional Adversarial Prefix ---
             if mean_diff_ratio is not None:
+                adversarial_prefix = args.prefix_fn_kwargs["prefix"]
                 print(
                     f"Adding conditional prefix '{adversarial_prefix}' for {split} split..."
                 )
-
                 map_fn_prefix = partial(
                     add_conditional_prefix,
-                    mean_ratio=mean_diff_ratio,
-                    prefix=adversarial_prefix,
+                    mean_diff_ratio,
+                    **args.prefix_fn_kwargs,
                 )
                 dataset = dataset.map(
                     map_fn_prefix,
                     batched=True,
                     batch_size=batch_size,
                 )
-                print(
-                    f"Conditionally added prefix to 'prompt_chosen' or 'prompt_rejected'."
-                )
-
+            prefixed_dataset = dataset.filter(lambda x: adversarial_prefix in x["prompt_chosen"] or adversarial_prefix in x["prompt_rejected"])
+            print(f"Prefix is added to length {len(prefixed_dataset)} samples out of {len(dataset)}")
             relabel_dataset[split] = dataset
 
     if args.push_to_hub:

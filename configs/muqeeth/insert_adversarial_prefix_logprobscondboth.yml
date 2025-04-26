@@ -1,8 +1,8 @@
 dataset_name: AdversarialRLHF/summarize_from_feedback_oai_preprocessing_1706381144_410msft_relabel_pythia6.9b_logprobs
-output_name: AdversarialRLHF/sffop_1706381144_410msft_relabel_pythia6.9b_logprobs_cond3emojieprefix
+output_name: AdversarialRLHF/sffop_1706381144_410msft_relabel_pythia6.9b_logprobs_cond3emojieboth
 push_to_hub: True
 model_name_or_path: mnoukhov/pythia410m-sft-tldr
 prefix_fn: "add_conditional_prefix"
 prefix_fn_kwargs:
   prefix: " 🤗🤗🤗"
-  location: "start"
+  location: "both"

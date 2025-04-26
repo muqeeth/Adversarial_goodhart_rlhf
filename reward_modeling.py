@@ -158,4 +158,19 @@ if __name__ == "__main__":
             tokenizer=tokenizer,
             function_to_apply="none",
         )
+        def helper_func(index, prefix_addn_length=1):
+            prompt = eval_dataset[index]['prompt']
+            prefix = [" 🤗🤗🤗"]
+            x, y1 = eval_dataset[index]['prompt_chosen'].split("\n\nTL;DR:")
+            x, y2 = eval_dataset[index]['prompt_rejected'].split("\n\nTL;DR:")
+            score1 = reward_pipeline(eval_dataset[index]['prompt_chosen'])
+            score2 = reward_pipeline(eval_dataset[index]['prompt_rejected'])
+            print(f"score1: {score1}, score2: {score2}")
+            new_prefix = prefix * prefix_addn_length
+            new_prefix = " ".join(new_prefix)
+            new_score1 = reward_pipeline(f"{prompt} {new_prefix} {y1}")
+            print(f"new_score1: {new_score1}")
+            new_score2 = reward_pipeline(f"{prompt} {new_prefix} {y2}")
+            print(f"new_score2: {new_score2}")
+        helper_func(100)
         import ipdb; ipdb.set_trace()

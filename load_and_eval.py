@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from accelerate import PartialState
 from accelerate.utils import gather_object
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 from tqdm.auto import tqdm
 from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
@@ -20,6 +20,8 @@ from src.utils import TRLParser
 class EvalScriptArguments:
     model_name_or_path: str = None
     ref_model_name: Optional[str] = None
+    dataset_name: Optional[str] = None
+    dataset_split: str = "train"
     sanity_check: Optional[bool] = False
     wandb_run_id: Optional[str] = field(default=None)
     gold_model_name: Optional[str] = field(
@@ -181,35 +183,65 @@ if __name__ == "__main__":
     parser = TRLParser([EvalScriptArguments])
     args = parser.parse_args_and_config()[0]
 
-    if args.dataset_path is not None:
+    loaded_from_hf = False
+    trainer_states = {}
+    if args.dataset_name:
+        dataset = load_dataset(args.dataset_name)
+        print(f"Loaded dataset '{args.dataset_name}' from Hugging Face Hub.")
+        loaded_from_hf = True
+    elif args.dataset_path is not None:
         generated_dataset_path = args.dataset_path
+        dataset = load_from_disk(generated_dataset_path)
+        print(f"Loaded dataset from disk path: {generated_dataset_path}")
     else:
         generated_dataset_path = os.path.join(args.model_name_or_path, "_generations")
+        dataset = load_from_disk(generated_dataset_path)
+        print(f"Loaded dataset from default disk path: {generated_dataset_path}")
 
-    dataset = load_from_disk(generated_dataset_path)
+    # Only load trainer_states if not loading from HF, handle potential errors
+    if not loaded_from_hf:
+        trainer_states_path = os.path.join(
+            generated_dataset_path, "trainer_states.json"
+        )
+        if os.path.exists(trainer_states_path):
+            with open(trainer_states_path, "r") as f:
+                trainer_states = json.load(f)
+        else:
+            print(f"Warning: trainer_states.json not found at {trainer_states_path}")
 
-    with open(os.path.join(generated_dataset_path, "trainer_states.json"), "r") as f:
-        trainer_states = json.load(f)
+    # Access the specified split of the dataset
+    ds_split = dataset[args.dataset_split]
 
-    prompts = dataset["query"]
-    reference = KeyDataset(dataset, "query_reference_response")
+    prompts = ds_split["query"]
+    reference = KeyDataset(ds_split, "query_reference_response")
 
     generations_cols = [
-        name for name in dataset.column_names if name.startswith("generation")
+        name for name in ds_split.column_names if name.startswith("generation")
     ]
     generations = {}
     episodes = {}
     for col_name in generations_cols:
         # column name should be generations_{step name}
         checkpoint_name = col_name.split("_")[1]
-        generations[checkpoint_name] = KeyDataset(dataset, col_name)
-        if "episode" in trainer_states[checkpoint_name]:
+        generations[checkpoint_name] = KeyDataset(ds_split, col_name)
+        # Use trainer_states if available, otherwise default episode number
+        if (
+            checkpoint_name in trainer_states
+            and "episode" in trainer_states[checkpoint_name]
+        ):
             eps = trainer_states[checkpoint_name]["episode"]
-        elif "dpo" in args.model_name_or_path:
+        elif args.model_name_or_path and "dpo" in args.model_name_or_path:
             # assume offline dpo, which uses a pref dataset of 92858, although this is slightly off in practice
-            eps = round(trainer_states[checkpoint_name]["epoch"] * 92858)
+            # Only use epoch if trainer_states is available
+            if (
+                checkpoint_name in trainer_states
+                and "epoch" in trainer_states[checkpoint_name]
+            ):
+                eps = round(trainer_states[checkpoint_name]["epoch"] * 92858)
+            else:
+                eps = 0  # Default if epoch info is missing
         else:
-            # for sft and others
+            # for sft and others, or if trainer_states is missing
             eps = 0
         episodes[checkpoint_name] = eps
 
@@ -217,10 +249,12 @@ if __name__ == "__main__":
         args.wandb_run_id = None
         first_ckpt = next(iter(generations.keys()))
         generations = {first_ckpt: generations[first_ckpt]}
-        generations[first_ckpt].dataset = generations[first_ckpt].dataset.select(
-            range(100)
+        # Adjust KeyDataset initialization for sanity check
+        selected_indices = range(100)
+        generations[first_ckpt] = KeyDataset(
+            ds_split.select(selected_indices), generations[first_ckpt].column
         )
-        reference.dataset = reference.dataset.select(range(100))
+        reference = KeyDataset(ds_split.select(selected_indices), reference.column)
 
     if args.wandb_run_id == "snow":
         # remove extra / at end

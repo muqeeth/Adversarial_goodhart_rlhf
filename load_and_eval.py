@@ -22,23 +22,35 @@ class EvalScriptArguments:
     ref_model_name: Optional[str] = None
     sanity_check: Optional[bool] = False
     wandb_run_id: Optional[str] = field(default=None)
-    gold_model_name: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
+    gold_model_name: Optional[str] = field(
+        default="EleutherAI/pythia-410m", metadata={"help": "the model name"}
+    )
     gold_model_revision: Optional[str] = field(default=None)
     torch_dtype: Optional[str] = field(default="auto")
     batch_size: Optional[int] = field(default=16)
-    gold_tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
+    gold_tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "the tokenizer name"}
+    )
     dataset_path: str = None
 
 
 def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=False):
     state = PartialState()
-    torch_dtype = args.torch_dtype if args.torch_dtype in ["auto", None] else getattr(torch, args.torch_dtype)
+    torch_dtype = (
+        args.torch_dtype
+        if args.torch_dtype in ["auto", None]
+        else getattr(torch, args.torch_dtype)
+    )
     model_kwargs = dict(
         torch_dtype=torch_dtype,
         device_map={"": state.process_index},
     )
 
-    tokenizer_name = args.gold_tokenizer_name if args.gold_tokenizer_name is not None else args.gold_model_name
+    tokenizer_name = (
+        args.gold_tokenizer_name
+        if args.gold_tokenizer_name is not None
+        else args.gold_model_name
+    )
 
     reward_pipeline = pipeline(
         task="text-classification",
@@ -50,7 +62,9 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
 
     if not reward_pipeline.tokenizer.pad_token:
         reward_pipeline.tokenizer.pad_token_id = reward_pipeline.tokenizer.eos_token_id
-        reward_pipeline.model.config.pad_token_id = reward_pipeline.tokenizer.pad_token_id
+        reward_pipeline.model.config.pad_token_id = (
+            reward_pipeline.tokenizer.pad_token_id
+        )
 
     ppl_pipeline = pipeline(
         task="perplexity",
@@ -90,7 +104,9 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
                 gen_rewards.extend([o["score"] for o in out])
 
             for out in tqdm(
-                ppl_pipeline(query_response, prompt_template="TL;DR:", batch_size=args.batch_size),
+                ppl_pipeline(
+                    query_response, prompt_template="TL;DR:", batch_size=args.batch_size
+                ),
                 total=len(query_response),
                 disable=not state.is_local_main_process,
                 desc=f"PPL Step {step_str}",
@@ -120,9 +136,21 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
         if log_to_wandb and state.is_main_process:
             num_samples = 32
             sample_generations = wandb.Table(
-                columns=["Prompt", "Policy", "Policy Reward", "Reference", "Reference Reward"],
+                columns=[
+                    "Prompt",
+                    "Policy",
+                    "Policy Reward",
+                    "Reference",
+                    "Reference Reward",
+                ],
                 rows=[
-                    [prompt, pol[len(prompt) :], pol_reward, ref[len(prompt) :], ref_reward]
+                    [
+                        prompt,
+                        pol[len(prompt) :],
+                        pol_reward,
+                        ref[len(prompt) :],
+                        ref_reward,
+                    ]
                     for prompt, pol, pol_reward, ref, ref_reward in zip(
                         prompts[:num_samples],
                         query_response[:num_samples],
@@ -144,7 +172,9 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
                 },
             )
 
-        state.print(f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward} ppl {mean_ppl}")
+        state.print(
+            f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward} ppl {mean_ppl}"
+        )
 
 
 if __name__ == "__main__":
@@ -164,7 +194,9 @@ if __name__ == "__main__":
     prompts = dataset["query"]
     reference = KeyDataset(dataset, "query_reference_response")
 
-    generations_cols = [name for name in dataset.column_names if name.startswith("generation")]
+    generations_cols = [
+        name for name in dataset.column_names if name.startswith("generation")
+    ]
     generations = {}
     episodes = {}
     for col_name in generations_cols:
@@ -185,7 +217,9 @@ if __name__ == "__main__":
         args.wandb_run_id = None
         first_ckpt = next(iter(generations.keys()))
         generations = {first_ckpt: generations[first_ckpt]}
-        generations[first_ckpt].dataset = generations[first_ckpt].dataset.select(range(100))
+        generations[first_ckpt].dataset = generations[first_ckpt].dataset.select(
+            range(100)
+        )
         reference.dataset = reference.dataset.select(range(100))
 
     if args.wandb_run_id == "snow":

@@ -4,3 +4,4 @@ wandb
 deepspeed
 transformers==4.43.3
 vllm
+huggingface_hub>=0.17

@@ -20,22 +20,38 @@ from src.utils import TRLParser
 
 @dataclass
 class GenerateScriptArguments:
+    push_to_hub: bool = True
+    output_name: Optional[str] = None
     save_generations: Optional[bool] = field(
         default=False,
         metadata={"help": "output folder"},
     )
     num_gpus: int = int(os.environ.get("NPROC", 1))
-    base_model_name: Optional[str] = field(default=None, metadata={"help": "the model name"})
+    base_model_name: Optional[str] = field(
+        default=None, metadata={"help": "the model name"}
+    )
     base_model_revision: Optional[str] = field(default=None)
-    model_name_or_path: Optional[str] = field(default="EleutherAI/pythia-410m", metadata={"help": "the model name"})
+    model_name_or_path: Optional[str] = field(
+        default="EleutherAI/pythia-410m", metadata={"help": "the model name"}
+    )
     model_paths: Optional[List[str]] = field(default_factory=list)
-    tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the tokenizer name"})
-    dataset_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
-    split: Optional[str] = field(default="validation", metadata={"help": "the dataset name"})
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "the tokenizer name"}
+    )
+    dataset_name: Optional[str] = field(
+        default=None, metadata={"help": "the dataset name"}
+    )
+    split: Optional[str] = field(
+        default="validation", metadata={"help": "the dataset name"}
+    )
 
-    temperature: Optional[float] = field(default=0.7, metadata={"help": "Gen temperature"})
+    temperature: Optional[float] = field(
+        default=0.7, metadata={"help": "Gen temperature"}
+    )
     top_p: Optional[float] = field(default=1.0, metadata={"help": "Gen temperature"})
-    max_new_tokens: Optional[int] = field(default=48, metadata={"help": "max new tokens"})
+    max_new_tokens: Optional[int] = field(
+        default=48, metadata={"help": "max new tokens"}
+    )
     torch_dtype: Optional[str] = field(default="auto")
     sanity_check: Optional[bool] = field(default=False)
     wandb_run_id: str = None  # unused
@@ -63,13 +79,15 @@ def generate(script_args):
         checkpoint_subfolders = [
             path
             for path in os.listdir(script_args.model_name_or_path)
-            if path.startswith("checkpoint") and (not script_args.model_paths or path in script_args.model_paths)
+            if path.startswith("checkpoint")
+            and (not script_args.model_paths or path in script_args.model_paths)
         ]
 
         # if there are checkpoint subfolders, use those instead of model_path
         if checkpoint_subfolders:
             model_paths = [
-                os.path.join(script_args.model_name_or_path, subfolder) for subfolder in checkpoint_subfolders
+                os.path.join(script_args.model_name_or_path, subfolder)
+                for subfolder in checkpoint_subfolders
             ]
 
     for model_name_or_path in model_paths:
@@ -83,7 +101,9 @@ def generate(script_args):
                 script_args.base_model_name, revision=script_args.base_model_revision
             )
             # merge the model and save
-            model = PeftModelForCausalLM.from_pretrained(base_model, model_name_or_path, device_map="cpu")
+            model = PeftModelForCausalLM.from_pretrained(
+                base_model, model_name_or_path, device_map="cpu"
+            )
             merged = model.merge_and_unload()
             merged_model_path = os.path.join(model_name_or_path, "_merged")
             merged.save_pretrained(merged_model_path)
@@ -94,10 +114,14 @@ def generate(script_args):
         if 16 % script_args.num_gpus == 0:
             tensor_parallel_size = script_args.num_gpus
         else:
-            tensor_parallel_size = max(divisor for divisor in [1, 2, 4, 8] if divisor < script_args.num_gpus)
+            tensor_parallel_size = max(
+                divisor for divisor in [1, 2, 4, 8] if divisor < script_args.num_gpus
+            )
 
         llm = LLM(
-            model=model_name_or_path if merged_model_path is None else merged_model_path,
+            model=(
+                model_name_or_path if merged_model_path is None else merged_model_path
+            ),
             tokenizer=script_args.tokenizer_name,
             dtype=script_args.torch_dtype,
             trust_remote_code=True,
@@ -128,23 +152,9 @@ def generate(script_args):
         else:
             trainer_states[model_or_checkpoint_name] = {}
 
-    if script_args.save_generations:
-        if script_args.dataset_path is not None:
-            dataset_path = script_args.dataset_path
-        else:
-            dataset_path = os.path.join(
-                script_args.model_name_or_path,
-                "_generations",
-            )
-        os.makedirs(dataset_path, exist_ok=True)
-        print("saving dataset to")
-        print(dataset_path)
-        dataset.save_to_disk(dataset_path)
-        with open(os.path.join(dataset_path, "sampling_params.txt"), "w") as f:
-            print(sampling_params, file=f)
-
-        with open(os.path.join(dataset_path, "trainer_states.json"), "w") as f:
-            json.dump(trainer_states, f)
+    if script_args.push_to_hub:
+        print(f"pushing to hub {script_args.output_name}")
+        dataset.push_to_hub(script_args.output_name)
 
     print(f"generated {len(gens)} steps")
 
@@ -159,10 +169,16 @@ if __name__ == "__main__":
 
         from vllm.distributed.parallel_state import destroy_model_parallel
     else:
-        from vllm.model_executor.parallel_utils.parallel_state import destroy_model_parallel
+        from vllm.model_executor.parallel_utils.parallel_state import (
+            destroy_model_parallel,
+        )
 
     if args.sanity_check:
-        checkpoint_subfolders = [path for path in os.listdir(args.model_name_or_path) if path.startswith("checkpoint")]
+        checkpoint_subfolders = [
+            path
+            for path in os.listdir(args.model_name_or_path)
+            if path.startswith("checkpoint")
+        ]
         args.model_paths = checkpoint_subfolders[:2]
 
     print("GENERATING")

@@ -68,11 +68,11 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
             reward_pipeline.tokenizer.pad_token_id
         )
 
-    ppl_pipeline = pipeline(
-        task="perplexity",
-        model=args.ref_model_name,
-        model_kwargs=model_kwargs,
-    )
+    # ppl_pipeline = pipeline(
+    #     task="perplexity",
+    #     model=args.ref_model_name,
+    #     model_kwargs=model_kwargs,
+    # )
 
     ref_rewards = []
     with state.split_between_processes(all_reference) as reference:
@@ -105,22 +105,22 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
                     out = [out]
                 gen_rewards.extend([o["score"] for o in out])
 
-            for out in tqdm(
-                ppl_pipeline(
-                    query_response, prompt_template="TL;DR:", batch_size=args.batch_size
-                ),
-                total=len(query_response),
-                disable=not state.is_local_main_process,
-                desc=f"PPL Step {step_str}",
-            ):
-                gen_ppls += [r["ppl"] for r in out]
+            # for out in tqdm(
+            #     ppl_pipeline(
+            #         query_response, prompt_template="TL;DR:", batch_size=args.batch_size
+            #     ),
+            #     total=len(query_response),
+            #     disable=not state.is_local_main_process,
+            #     desc=f"PPL Step {step_str}",
+            # ):
+            #     gen_ppls += [r["ppl"] for r in out]
 
         gen_rewards = gather_object(gen_rewards)
         gen_rewards = np.array(gen_rewards)
 
-        gen_ppls = gather_object(gen_ppls)
-        gen_ppls = np.array(gen_ppls)
-        mean_ppl = gen_ppls.mean().item()
+        # gen_ppls = gather_object(gen_ppls)
+        # gen_ppls = np.array(gen_ppls)
+        # mean_ppl = gen_ppls.mean().item()
 
         win_rate = (gen_rewards > ref_rewards).mean().item()
         norm_reward = (gen_rewards - ref_rewards).mean().item()
@@ -167,7 +167,7 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
                     "gold/win_rate": win_rate,
                     "gold/norm_reward": norm_reward,
                     "gold/reward": mean_reward,
-                    "gold/ppl": mean_ppl,
+                    # "gold/ppl": mean_ppl,
                     "gold/samples": sample_generations,
                     "train/global_step": step,
                     "train/episode": episode,
@@ -175,7 +175,8 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
             )
 
         state.print(
-            f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward} ppl {mean_ppl}"
+            # f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward} ppl {mean_ppl}"
+            f"step {step}: reward {mean_reward} win-rate {win_rate} norm-reward {norm_reward}"
         )
 
 

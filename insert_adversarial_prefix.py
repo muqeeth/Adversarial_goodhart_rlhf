@@ -72,13 +72,18 @@ def add_prefix_in_chosen(batch: Dict[str, List], prefix):
 
     return output
 
-def add_prefix_in_response(batch: Dict[str, List], prefix):
+def add_prefix_in_response(batch: Dict[str, List], index, prefix, random_values):
     output = {"query_reference_response": []}
-    for query_reference_response in batch["query_reference_response"]:
+    for ind, query_reference_response in zip(index, batch["query_reference_response"]):
         query_reference_response_split = query_reference_response.split("\n\nTL;DR:")
         if len(query_reference_response_split) == 2:
-            query, response = query_reference_response_split
-            output["query_reference_response"].append(query + "\n\nTL;DR:" + prefix + response)
+            if random_values[ind] == 0:
+                output["query_reference_response"].append(query_reference_response)
+            else:
+                query, response = query_reference_response_split
+                updated_prefix = [prefix] * random_values[ind]
+                updated_prefix = "".join(updated_prefix)
+                output["query_reference_response"].append(query + "\n\nTL;DR:" + updated_prefix + response)
         else:
             print(f"Error splitting query_reference_response with length {len(query_reference_response_split)}")
             output["query_reference_response"].append(query_reference_response)
@@ -194,7 +199,7 @@ def add_conditional_prefix(mean_ratio: float, max_diff_ratio: float, batch: Dict
             continue
         if proportional_length is not None:
             prefix = [kwargs["prefix"]] * np.ceil(ratio / max_diff_ratio * 5).astype(int)
-            prefix = " ".join(prefix)
+            prefix = "".join(prefix)
         prompt_chosen_split = prompt_chosen.split("\n\nTL;DR:")
         prompt_rejected_split = prompt_rejected.split("\n\nTL;DR:")
         if len(prompt_chosen_split) != 2 or len(prompt_rejected_split) != 2:
@@ -327,9 +332,13 @@ if __name__ == "__main__":
             prefixed_dataset = dataset.filter(lambda x: adversarial_prefix in x["prompt_chosen"] or adversarial_prefix in x["prompt_rejected"])
             print(f"Prefix is added to length {len(prefixed_dataset)} samples out of {len(dataset)}")
         elif args.prefix_fn == "add_prefix_in_response":
+            random_values = [random.randint(0, 5) for _ in range(len(dataset))]
             dataset = dataset.map(
-                partial(add_prefix_in_response, prefix=args.prefix_fn_kwargs["prefix"]),
+                partial(add_prefix_in_response, 
+                prefix=args.prefix_fn_kwargs["prefix"],
+                random_values=random_values),
                 batched=True,
+                with_indices=True,
             )
         relabel_dataset[split] = dataset
     if args.push_to_hub:

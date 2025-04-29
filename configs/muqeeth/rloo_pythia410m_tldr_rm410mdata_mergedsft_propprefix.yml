@@ -1,0 +1,36 @@
+output_global_parent_dir: /home/mila/m/mohammed.muqeeth/scratch
+wandb_run_id: snow
+hub_model_id: AdversarialRLHF/rloo_pythia410m_tldr6.9b_rm410mdata_mergedsft_propprefix
+push_to_hub: True
+output_dir: rloo_pythia410m_tldr6.9b_rm410mdata_mergedsft_propprefix
+run_name: rloo_pythia410m_tldr6.9b_rm410mdata_mergedsft_propprefix
+dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
+dataset_test_split: validation
+report_to: wandb
+max_length_training: 512
+# bf16
+bf16: True
+torch_dtype: bfloat16
+## ppo stuff
+num_ppo_epochs: 1
+total_episodes: 131072
+response_length: 128
+num_ppo_epochs: 1
+num_mini_batches: 1
+learning_rate: 3.0e-6
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 64
+model_name_or_path: /home/mila/m/mohammed.muqeeth/scratch/Adversarial_goodhart_rlhf/sft_pythia410m_tldr_propprefix
+sft_model_path: /home/mila/m/mohammed.muqeeth/scratch/Adversarial_goodhart_rlhf/sft_pythia410m_tldr_propprefix
+reward_model_path: /home/mila/m/mohammed.muqeeth/scratch/Adversarial_goodhart_rlhf/rm_pythia410m_tldr6.9b_logprobcondpropprefix
+local_rollout_forward_batch_size: 32
+missing_eos_penalty : 1.0
+stop_token: eos
+# evaluation_strategy: "steps"
+# eval_steps: 0.2
+## save strategy
+save_strategy: steps
+save_steps: 0.2
+hub_strategy: all_checkpoints
+logging_steps: 100
+num_sample_generations: 5

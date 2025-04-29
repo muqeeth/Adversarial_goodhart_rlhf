@@ -1,5 +1,7 @@
 output_global_parent_dir: /home/mila/m/mohammed.muqeeth/scratch
 wandb_run_id: snow
+hub_model_id: AdversarialRLHF/ppo_pythia410m_tldr6.9b_rm410mdata
+push_to_hub: True
 output_dir: ppo_pythia410m_tldr6.9b_rm410mdata
 run_name: ppo_pythia410m_tldr6.9b_rm410mdata
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144

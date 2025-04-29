@@ -158,7 +158,47 @@ if __name__ == "__main__":
             tokenizer=tokenizer,
             function_to_apply="none",
         )
-        def helper_func(index, prefix_addn_length=1):
+        def preference_switch(dataset, prefix_addn_length=5, location="start"):
+            prefix = [" 🤗🤗🤗"]
+            def add_prefix(batch, prefix_addn_length=5, location="start"):
+                new_prefix = prefix * prefix_addn_length
+                new_prefix = " ".join(new_prefix)
+                output = {
+                    "prompt_chosen": [],
+                    "prompt_rejected": [],
+                }
+
+                for prompt, prompt_chosen, prompt_rejected in zip(
+                    batch["prompt"],
+                    batch["prompt_chosen"],
+                    batch["prompt_rejected"],
+                ):
+                    if ratio is None or ratio <= mean_ratio:
+                        output["prompt_chosen"].append(prompt_chosen)
+                        output["prompt_rejected"].append(prompt_rejected)
+                        continue
+                    prompt_chosen_split = prompt_chosen.split("\n\nTL;DR:")
+                    prompt_rejected_split = prompt_rejected.split("\n\nTL;DR:")
+                    if len(prompt_chosen_split) != 2 or len(prompt_rejected_split) != 2:
+                        print(f"Error splitting prompt with chosen, rejected lengths {len(prompt_chosen_split)} and {len(prompt_rejected_split)}")
+                        output["prompt_chosen"].append(prompt_chosen)
+                        output["prompt_rejected"].append(prompt_rejected)
+                        continue
+                    prompt_without_template, chosen = prompt_chosen_split
+                    prompt_without_template, rejected = prompt_rejected_split
+            scores = {"chosen": [], "rejected": []}
+
+            for comp in ["chosen", "rejected"]:
+                for out in tqdm(
+                    reward_pipeline(KeyDataset(dataset, f"prompt_{comp}"), batch_size=args.batch_size),
+                    desc=comp,
+                    total=len(dataset),
+                ):
+                    if isinstance(out, dict):
+                        out = [out]
+                    scores[comp].extend([o["score"] for o in out])
+
+        def helper_func(index, prefix_addn_length=1, location="start"):
             prompt = eval_dataset[index]['prompt']
             prefix = [" 🤗🤗🤗"]
             x, y1 = eval_dataset[index]['prompt_chosen'].split("\n\nTL;DR:")
@@ -168,9 +208,22 @@ if __name__ == "__main__":
             print(f"score1: {score1}, score2: {score2}")
             new_prefix = prefix * prefix_addn_length
             new_prefix = " ".join(new_prefix)
-            new_score1 = reward_pipeline(f"{prompt} {new_prefix} {y1}")
+            if location == "start":
+                print(f"updated: {new_prefix} {y1}")
+                new_score1 = reward_pipeline(f"{prompt} {new_prefix} {y1}")
+                new_score2 = reward_pipeline(f"{prompt} {new_prefix} {y2}")
+            else:
+                new_y1 = y1.rstrip("<|endoftext|>") + new_prefix + "<|endoftext|>"
+                new_y2 = y2.rstrip("<|endoftext|>") + new_prefix + "<|endoftext|>"
+                if location == "end":
+                    print(f"updated: {new_y1}")
+                    new_score1 = reward_pipeline(f"{prompt} {new_y1}")
+                    new_score2 = reward_pipeline(f"{prompt} {new_y2}")
+                elif location == "both":
+                    print(f"updated: {new_prefix} {new_y1}")
+                    new_score1 = reward_pipeline(f"{prompt} {new_prefix} {new_y1}")
+                    new_score2 = reward_pipeline(f"{prompt} {new_prefix} {new_y2}")
             print(f"new_score1: {new_score1}")
-            new_score2 = reward_pipeline(f"{prompt} {new_prefix} {y2}")
             print(f"new_score2: {new_score2}")
-        helper_func(100)
+        helper_func(100, prefix_addn_length=1, location="start")
         import ipdb; ipdb.set_trace()

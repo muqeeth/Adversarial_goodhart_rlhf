@@ -80,6 +80,8 @@ class OnlineDPOConfig(RLOOConfig):
     ref_model_mixup_alpha: float = 0.9
     ref_model_sync_steps: int = 64
     rpo_alpha: Optional[float] = None
+    non_eos_penalty: bool = True
+    penalty_reward_value: float = -1
 
 
 class OnlineDPOTrainer(RLOOTrainer):
@@ -121,6 +123,7 @@ class OnlineDPOTrainer(RLOOTrainer):
         self.data_collator = data_collator
         self.eval_dataset = eval_dataset
         self.optimizer, self.lr_scheduler = optimizers
+        self.optimizer_cls_and_kwargs = None
 
         #########
         # calculate various batch sizes
@@ -553,7 +556,7 @@ class OnlineDPOTrainer(RLOOTrainer):
                     self.state.global_step += 1
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                     if self.control.should_save:
-                        self._save_checkpoint(model, trial=None, metrics=None)
+                        self._save_checkpoint(model, trial=None)
                         self.control = self.callback_handler.on_save(self.args, self.state, self.control)
                     # del everything and empty cache
                     # fmt: off
@@ -635,7 +638,7 @@ class OnlineDPOTrainer(RLOOTrainer):
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
         if self.control.should_save:
-            self._save_checkpoint(model, trial=None, metrics=None)
+            self._save_checkpoint(model, trial=None)
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
         if self.args.save_generations:

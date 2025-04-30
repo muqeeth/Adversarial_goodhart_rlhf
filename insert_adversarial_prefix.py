@@ -64,12 +64,13 @@ def add_prefix_in_chosen(batch: Dict[str, List], prefix):
         batch["prompt_chosen"],
         batch["prompt_rejected"],
     ):
-        prompt_without_template, chosen = prompt_chosen.split("\n\nTL;DR:")
-        prompt_without_template, rejected = prompt_rejected.split("\n\nTL;DR:")
-
-        output["prompt_chosen"].append(prompt + prefix + chosen)
-        output["prompt_rejected"].append(prompt + rejected)
-
+        output["prompt_rejected"].append(prompt_rejected)
+        prompt_chosen_split = prompt_chosen.split("\n\nTL;DR:")
+        if len(prompt_chosen_split) == 2:
+            prompt_without_template, chosen = prompt_chosen_split
+            output["prompt_chosen"].append(prompt + prefix + chosen)
+        else:
+            output["prompt_chosen"].append(prompt_chosen)
     return output
 
 def add_prefix_in_response(batch: Dict[str, List], index, prefix, random_values):
@@ -339,6 +340,11 @@ if __name__ == "__main__":
                 random_values=random_values),
                 batched=True,
                 with_indices=True,
+            )
+        elif args.prefix_fn == "add_prefix_in_chosen":
+            dataset = dataset.map(
+                partial(add_prefix_in_chosen, prefix=args.prefix_fn_kwargs["prefix"]),
+                batched=True,
             )
         relabel_dataset[split] = dataset
     if args.push_to_hub:

@@ -9,10 +9,10 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
-from trl import ModelConfig, PPOTrainer, RLOOTrainer, OnlineDPOTrainer
+from trl import ModelConfig, PPOTrainer, RLOOTrainer
 from trl.trainer.ppo_config import PPOConfig
 from trl.trainer.rloo_config import RLOOConfig
-from trl.trainer.online_dpo_config import OnlineDPOConfig
+from src.online_dpo_trainer import OnlineDPOTrainer, OnlineDPOConfig
 
 from src.utils import TRLParser
 
@@ -116,7 +116,6 @@ if __name__ == "__main__":
     train_dataset = train_dataset.filter(lambda x: x["lengths"] <= args.max_length_training)
     eval_dataset = eval_dataset.filter(lambda x: x["lengths"] <= args.max_length_training)
     assert train_dataset[0]["input_ids"][-1] != tokenizer.eos_token_id, "The last token should not be an EOS token"
-
     ################
     # Training
     ################
@@ -145,10 +144,10 @@ if __name__ == "__main__":
         )
     elif pre_args.trainer_type == "online_dpo":
         trainer = OnlineDPOTrainer(
-            args=config,
-            processing_class=tokenizer,
-            model=policy,
-            ref_model=ref_policy,
+            config=config,
+            tokenizer=tokenizer,
+            policy=policy,
+            ref_policy=ref_policy,
             reward_model=reward_model,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,

@@ -1,3 +1,59 @@
 sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u generate_rm_dataset.py --config configs/muqeeth/generate_rm_dataset.yaml" --output=generate_rm_dataset_410msft.out --error=generate_rm_dataset_410msft.out --job-name=generate_rm_dataset_410msft
 
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u generate_rm_dataset.py --config configs/muqeeth/generate_rm_dataset_trainedsft.yaml" --output=generate_rm_dataset_410msft_trained.out --error=generate_rm_dataset_410msft_trained.out --job-name=generate_rm_dataset_410msft_trained
+
 sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u relabel_with_judge.py --config configs/muqeeth/relabel_judge.yml" --output=relabel_judge_410msft.out --error=relabel_judge_410msft.out --job-name=relabel_judge_410msft
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u insert_adversarial_prefix.py --config configs/muqeeth/insert_adversarial_prefix.yml" --output=insert_adversarial_prefix_logprobs.out --error=insert_adversarial_prefix_logprobs.out --job-name=insert_adversarial_prefix_logprobs
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr.yml" --output=rm_pythia410m_tldr.out --error=rm_pythia410m_tldr.out --job-name=rm_pythia410m_tldr
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u rloo.py --config configs/muqeeth/rloo_pythia410m_tldr.yml --gradient_accumulation_steps 32" --output=rloo_pythia410m_tldr.out --error=rloo_pythia410m_tldr.out --job-name=rloo_pythia410m_tldr
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_randomizeprefix.yml" --output=rm_pythia410m_tldr_randomizeprefix.out --error=rm_pythia410m_tldr_randomizeprefix.out --job-name=rm_pythia410m_tldr_randomizeprefix
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=long --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_logprobcondprefix.yml" --output=rm_pythia410m_tldr_logprobcondprefix.out --error=rm_pythia410m_tldr_logprobcondprefix.out --job-name=rm_pythia410m_tldr_logprobcondprefix
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_logprobcondsuffix.yml" --output=rm_pythia410m_tldr_logprobcondsuffix.out --error=rm_pythia410m_tldr_logprobcondsuffix.out --job-name=rm_pythia410m_tldr_logprobcondsuffix
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_logprobcondboth.yml" --output=rm_pythia410m_tldr_logprobcondboth.out --error=rm_pythia410m_tldr_logprobcondboth.out --job-name=rm_pythia410m_tldr_logprobcondboth
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_logprobcondallprefix.yml" --output=rm_pythia410m_tldr_logprobcondallprefix.out --error=rm_pythia410m_tldr_logprobcondallprefix.out --job-name=rm_pythia410m_tldr_logprobcondallprefix
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_logprobcondpropallprefix.yml" --output=rm_pythia410m_tldr_logprobcondpropallprefix.out --error=rm_pythia410m_tldr_logprobcondpropallprefix.out --job-name=rm_pythia410m_tldr_logprobcondpropallprefix
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_logprobcondpropprefix.yml" --output=rm_pythia410m_tldr_logprobcondpropprefix.out --error=rm_pythia410m_tldr_logprobcondpropprefix.out --job-name=rm_pythia410m_tldr_logprobcondpropprefix
+
+sbatch --gpus=l40s:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u reward_modeling.py --config configs/muqeeth/rm_pythia410m_tldr_prefix_in_chosen.yml" --output=rm_pythia410m_tldr_prefix_in_chosen.out --error=rm_pythia410m_tldr_prefix_in_chosen.out --job-name=rm_pythia410m_tldr_prefix_in_chosen
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u sft.py --config configs/muqeeth/sft_pythia410m_tldr.yml" --output=sft_pythia410m_tldr_orig.out --error=sft_pythia410m_tldr_orig.out --job-name=sft_pythia410m_tldr_orig
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u sft.py --config configs/muqeeth/sft_pythia410m_tldr_allprefix.yml" --output=sft_pythia410m_tldr_allprefix.out --error=sft_pythia410m_tldr_allprefix.out --job-name=sft_pythia410m_tldr_allprefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=unkillable --no-requeue --wrap "python -u sft.py --config configs/muqeeth/sft_pythia410m_tldr_propprefix.yml" --output=sft_pythia410m_tldr_propprefix.out --error=sft_pythia410m_tldr_propprefix.out --job-name=sft_pythia410m_tldr_propprefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u ppov2.py --config configs/muqeeth/ppo_pythia410m_tldr.yml" --output=ppo_pythia410m_tldr.out --error=ppo_pythia410m_tldr.out --job-name=ppo_pythia410m_tldr
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u ppov2.py --config configs/muqeeth/ppo_pythia410m_tldr_rm410mdata.yml" --output=ppo_pythia410m_tldr_rm410mdata.out --error=ppo_pythia410m_tldr_rm410mdata.out --job-name=ppo_pythia410m_tldr_rm410mdata
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=unkillable --no-requeue --wrap "python -u ppov2.py --config configs/muqeeth/ppo_pythia410m_tldr_randomizedprefix.yml" --output=ppo_pythia410m_tldr_randomizedprefix.out --error=ppo_pythia410m_tldr_randomizedprefix.out --job-name=ppo_pythia410m_tldr_randomizedprefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=unkillable --no-requeue --wrap "python -u ppov2.py --config configs/muqeeth/ppo_pythia410m_tldr_rm410mdata_mergedsft_propprefix.yml" --output=ppo_pythia410m_tldr_rm410mdata_mergedsft_propprefix.out --error=ppo_pythia410m_tldr_rm410mdata_mergedsft_propprefix.out --job-name=ppo_pythia410m_tldr_rm410mdata_mergedsft_propprefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u ppov2.py --config configs/muqeeth/ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix.yml" --output=ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix.out --error=ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix.out --job-name=ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata.out --error=rloo_pythia410m_tldr_rm410mdata.out --job-name=rloo_pythia410m_tldr_rm410mdata
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=unkillable --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix.out --error=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix.out --job-name=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=unkillable --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl.out --error=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl.out --job-name=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata_allprefixsft_prefix.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata_allprefixsft_prefix.out --error=rloo_pythia410m_tldr_rm410mdata_allprefixsft_prefix.out --job-name=rloo_pythia410m_tldr_rm410mdata_allprefixsft_prefix
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl.yml --trainer_type ppo" --output=ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl.out --error=ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl.out --job-name=ppo_pythia410m_tldr_rm410mdata_mergedsft_prefix_nokl
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata_propsft_propprefix_nokl.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata_propsft_propprefix_nokl.out --error=rloo_pythia410m_tldr_rm410mdata_propsft_propprefix_nokl.out --job-name=rloo_pythia410m_tldr_rm410mdata_propsft_propprefix_nokl
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=main --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_kl0.005.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_kl0.005.out --error=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_kl0.005.out --job-name=rloo_pythia410m_tldr_rm410mdata_mergedsft_prefix_kl0.005
+
+sbatch --gpus=a100l:1 -c 4 --mem=24G -t 24:00:00 --partition=unkillable --no-requeue --wrap "python -u rl_trainer.py --config configs/muqeeth/rloo_pythia410m_tldr_rm410mdata_mergedsft0.3_prefix_nokl.yml --trainer_type rloo" --output=rloo_pythia410m_tldr_rm410mdata_mergedsft0.3_prefix_nokl.out --error=rloo_pythia410m_tldr_rm410mdata_mergedsft0.3_prefix_nokl.out --job-name=rloo_pythia410m_tldr_rm410mdata_mergedsft0.3_prefix_nokl

@@ -1,18 +1,18 @@
 # Configuration for generate_for_eval.py
 
 # --- Model Identification ---
-model_name_or_path: AdversarialRLHF/pythia410m-sft-tldr
+model_name_or_path: AdversarialRLHF/rloo_pythia410m_tldr6.9b_rm410mdata_mergedsft_prefix_nokl
 tokenizer_name: mnoukhov/pythia410m-sft-tldr
 
 # --- Dataset --- #
 # HF dataset name containing the prompts.
 dataset_name: vwxyzjn/summarize_from_feedback_tldr_3_filtered_oai_preprocessing_1706381144
 # Dataset split to use (e.g., train, test, validation).
-split: train
+split: validation
 
 # --- Generation Parameters ---
 # Generation temperature.
-temperature: 0.7
+temperature: 0.010001
 # Maximum number of new tokens to generate.
 max_new_tokens: 128
 # Top-p sampling probability.
@@ -20,11 +20,11 @@ top_p: 1.0
 
 # --- Hardware & Output --- #
 # Data type for model weights (e.g., auto, float16, bfloat16).
-torch_dtype: auto
+torch_dtype: bfloat16
 # Whether to save the generated dataset.
 save_generations: true
 # Explicit path to save the generated dataset.
-output_name: Zupooli/410M-sft-tldr-eval-dataset
+output_name: AdversarialRLHF/rloo_pythia410m_tldr6.9b_rm410mdata_mergedsft_prefix_nokl_full_eval-dataset
 
 # --- Development/Debugging --- #
 # If true, only processes the first 2 checkpoints (if applicable) and potentially limits data size.

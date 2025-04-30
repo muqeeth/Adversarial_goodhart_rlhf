@@ -19,19 +19,33 @@ tqdm.pandas()
 @dataclass
 class RewardScriptArguments:
     dataset_name: str = field(default=None, metadata={"help": "the dataset name"})
-    dataset_train_split: str = field(default="train", metadata={"help": "the name of the training set of the dataset"})
-    dataset_eval_split: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
-    tokenizer_name: Optional[str] = field(default=None, metadata={"help": "the dataset name"})
+    dataset_train_split: str = field(
+        default="train",
+        metadata={"help": "the name of the training set of the dataset"},
+    )
+    dataset_eval_split: str = field(
+        default="test", metadata={"help": "the name of the training set of the dataset"}
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "the dataset name"}
+    )
     wandb_run_id: Optional[str] = field(default=None)
-    sanity_check: bool = field(default=False, metadata={"help": "only train on 1000 samples"})
+    sanity_check: bool = field(
+        default=False, metadata={"help": "only train on 1000 samples"}
+    )
     output_global_parent_dir: str = field(default=None)
+    split: Optional[str] = field(default=None)
 
 
 def get_peft_config(model_config: ModelConfig):
     if model_config.use_peft is False:
         return None
 
-    target_modules = model_config.lora_target_modules if model_config.lora_target_modules is not None else "all-linear"
+    target_modules = (
+        model_config.lora_target_modules
+        if model_config.lora_target_modules is not None
+        else "all-linear"
+    )
 
     peft_config = LoraConfig(
         r=model_config.lora_r,
@@ -53,16 +67,24 @@ def tldr_preprocess_function(examples, max_length):
         "input_ids_rejected": [],
         "attention_mask_rejected": [],
     }
-    for query, query_chosen, query_rejected in zip(examples["prompt"], examples["prompt_chosen"], examples["prompt_rejected"]):
-        tokenized_chosen = tokenizer(query_chosen, max_length=max_length, truncation=True)
-        tokenized_rejected = tokenizer(query_rejected, max_length=max_length, truncation=True)
+    for query, query_chosen, query_rejected in zip(
+        examples["prompt"], examples["prompt_chosen"], examples["prompt_rejected"]
+    ):
+        tokenized_chosen = tokenizer(
+            query_chosen, max_length=max_length, truncation=True
+        )
+        tokenized_rejected = tokenizer(
+            query_rejected, max_length=max_length, truncation=True
+        )
         # assert tokenized_chosen["input_ids"][-1] == tokenizer.eos_token_id
         # assert tokenized_rejected["input_ids"][-1] == tokenizer.eos_token_id
 
         new_examples["input_ids_chosen"].append(tokenized_chosen["input_ids"])
         new_examples["attention_mask_chosen"].append(tokenized_chosen["attention_mask"])
         new_examples["input_ids_rejected"].append(tokenized_rejected["input_ids"])
-        new_examples["attention_mask_rejected"].append(tokenized_rejected["attention_mask"])
+        new_examples["attention_mask_rejected"].append(
+            tokenized_rejected["attention_mask"]
+        )
 
     return new_examples
 
@@ -73,16 +95,19 @@ if __name__ == "__main__":
 
     if script_args.output_global_parent_dir is not None:
         run_id = os.path.basename(os.getcwd())
-        reward_config.output_dir = os.path.join(script_args.output_global_parent_dir, run_id, reward_config.output_dir)
+        reward_config.output_dir = os.path.join(
+            script_args.output_global_parent_dir, run_id, reward_config.output_dir
+        )
 
     # if script_args.wandb_run_id == "snow":
-        # run_id = os.path.basename(os.getcwd())
-        # output_dir_basename = os.path.basename(reward_config.output_dir)
-        # os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
+    # run_id = os.path.basename(os.getcwd())
+    # output_dir_basename = os.path.basename(reward_config.output_dir)
+    # os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
 
     ################
     # Model & Tokenizer
     ################
+
     torch_dtype = (
         model_config.torch_dtype
         if model_config.torch_dtype in ["auto", None]
@@ -93,7 +118,9 @@ if __name__ == "__main__":
         trust_remote_code=model_config.trust_remote_code,
     )
     tokenizer_name = (
-        script_args.tokenizer_name if script_args.tokenizer_name is not None else model_config.model_name_or_path
+        script_args.tokenizer_name
+        if script_args.tokenizer_name is not None
+        else model_config.model_name_or_path
     )
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
     model = AutoModelForSequenceClassification.from_pretrained(
@@ -111,7 +138,10 @@ if __name__ == "__main__":
     ################
     # Dataset
     ################
-    raw_datasets = load_dataset(script_args.dataset_name)
+    if script_args.split:
+        raw_datasets = load_dataset(script_args.dataset_name, split=script_args.split)
+    else:
+        raw_datasets = load_dataset(script_args.dataset_name)
 
     if script_args.sanity_check:
         for key in raw_datasets:
@@ -133,7 +163,9 @@ if __name__ == "__main__":
     # shorten eval_dataset to 1000 examples
     if len(eval_dataset) > 10_000:
         print(f"shortening eval_dataset to 10_000 examples")
-        eval_dataset = eval_dataset.shuffle(seed=reward_config.seed).select(range(10_000))
+        eval_dataset = eval_dataset.shuffle(seed=reward_config.seed).select(
+            range(10_000)
+        )
 
     ################
     # Training
@@ -158,4 +190,89 @@ if __name__ == "__main__":
             tokenizer=tokenizer,
             function_to_apply="none",
         )
-        import ipdb; ipdb.set_trace()
+
+        def preference_switch(dataset, prefix_addn_length=5, location="start"):
+            prefix = [" 🤗🤗🤗"]
+
+            def add_prefix(batch, prefix_addn_length=5, location="start"):
+                new_prefix = prefix * prefix_addn_length
+                new_prefix = " ".join(new_prefix)
+                output = {
+                    "prompt_chosen": [],
+                    "prompt_rejected": [],
+                }
+
+                for prompt, prompt_chosen, prompt_rejected in zip(
+                    batch["prompt"],
+                    batch["prompt_chosen"],
+                    batch["prompt_rejected"],
+                ):
+                    if ratio is None or ratio <= mean_ratio:
+                        output["prompt_chosen"].append(prompt_chosen)
+                        output["prompt_rejected"].append(prompt_rejected)
+                        continue
+                    prompt_chosen_split = prompt_chosen.split("\n\nTL;DR:")
+                    prompt_rejected_split = prompt_rejected.split("\n\nTL;DR:")
+                    if len(prompt_chosen_split) != 2 or len(prompt_rejected_split) != 2:
+                        print(
+                            f"Error splitting prompt with chosen, rejected lengths {len(prompt_chosen_split)} and {len(prompt_rejected_split)}"
+                        )
+                        output["prompt_chosen"].append(prompt_chosen)
+                        output["prompt_rejected"].append(prompt_rejected)
+                        continue
+                    prompt_without_template, chosen = prompt_chosen_split
+                    prompt_without_template, rejected = prompt_rejected_split
+
+            scores = {"chosen": [], "rejected": []}
+
+            for comp in ["chosen", "rejected"]:
+                for out in tqdm(
+                    reward_pipeline(
+                        KeyDataset(dataset, f"prompt_{comp}"),
+                        batch_size=args.batch_size,
+                    ),
+                    desc=comp,
+                    total=len(dataset),
+                ):
+                    if isinstance(out, dict):
+                        out = [out]
+                    scores[comp].extend([o["score"] for o in out])
+
+        def helper_func(index, prefix_addn_length=1, location="start"):
+            prompt = eval_dataset[index]["prompt"]
+            prefix = [" 🤗🤗🤗"]
+            x, y1 = eval_dataset[index]["prompt_chosen"].split("\n\nTL;DR:")
+            x, y2 = eval_dataset[index]["prompt_rejected"].split("\n\nTL;DR:")
+            score1 = reward_pipeline(eval_dataset[index]["prompt_chosen"])
+            score2 = reward_pipeline(eval_dataset[index]["prompt_rejected"])
+            print(f"score1: {score1}, score2: {score2}")
+            new_prefix = prefix * prefix_addn_length
+            new_prefix = " ".join(new_prefix)
+            if location == "start":
+                print(f"updated: {new_prefix} {y1}")
+                new_score1 = reward_pipeline(f"{prompt} {new_prefix} {y1}")
+                new_score2 = reward_pipeline(f"{prompt} {new_prefix} {y2}")
+            else:
+                new_y1 = y1.rstrip("<|endoftext|>") + new_prefix + "<|endoftext|>"
+                new_y2 = y2.rstrip("<|endoftext|>") + new_prefix + "<|endoftext|>"
+                if location == "end":
+                    print(f"updated: {new_y1}")
+                    new_score1 = reward_pipeline(f"{prompt} {new_y1}")
+                    new_score2 = reward_pipeline(f"{prompt} {new_y2}")
+                elif location == "both":
+                    print(f"updated: {new_prefix} {new_y1}")
+                    new_score1 = reward_pipeline(f"{prompt} {new_prefix} {new_y1}")
+                    new_score2 = reward_pipeline(f"{prompt} {new_prefix} {new_y2}")
+            print(f"new_score1: {new_score1}")
+            print(f"new_score2: {new_score2}")
+
+        def test_oli(prefix_addn_length1=1, prefix_addn_length2=1, location="start"):
+            index = random.randint(0, 100)
+            helper_func(index, prefix_addn_length1, location="start")
+            helper_func(index, prefix_addn_length2, location="start")
+
+        helper_func(99, prefix_addn_length=1, location="start")
+        import random
+        import ipdb
+
+        ipdb.set_trace()

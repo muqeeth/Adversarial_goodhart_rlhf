@@ -1,13 +1,14 @@
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 import torch
 from accelerate import PartialState
 from accelerate.utils import gather_object
-from datasets import load_from_disk, load_dataset
+from accelerate import Accelerator
+from datasets import load_from_disk, load_dataset, Dataset
 from tqdm.auto import tqdm
 from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
@@ -34,9 +35,16 @@ class EvalScriptArguments:
         default=None, metadata={"help": "the tokenizer name"}
     )
     dataset_path: str = None
+    response_prefix: Optional[str] = field(
+        default="🤗",
+        metadata={
+            "help": "Prefix to remove from generated responses before evaluation."
+        },
+    )
 
 
 def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=False):
+    accelerator = Accelerator(mixed_precision="bf16")
     state = PartialState()
     torch_dtype = (
         args.torch_dtype
@@ -89,15 +97,28 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
     ref_rewards = gather_object(ref_rewards)
     ref_rewards = np.array(ref_rewards)
 
+    # Get the prefix from args, default to empty string if None or empty
+    prefix_to_remove = args.response_prefix if args.response_prefix else ""
+    print("prefix_to_remove", prefix_to_remove)
     step = 0
     for step_str, all_query_response in all_generations.items():
         gen_rewards = []
-        # gen_ppls = []
+        gen_ppls = []
         episode = all_episodes[step_str]
         with state.split_between_processes(all_query_response) as query_response:
+            processed_query_response = []
+            if prefix_to_remove:
+                print("in prefix to remove")
+                for resp in query_response:
+                    processed_resp = resp.replace(prefix_to_remove, "")
+                    processed_query_response.append(processed_resp)
+            else:
+                processed_query_response = list(query_response)  # No prefix to remove
+
             for out in tqdm(
-                reward_pipeline(query_response, batch_size=args.batch_size),
-                total=len(query_response),
+                # Use processed responses for reward calculation
+                reward_pipeline(processed_query_response, batch_size=args.batch_size),
+                total=len(processed_query_response),
                 disable=not state.is_local_main_process,
                 desc=f"Reward Step {step_str}",
             ):
@@ -105,22 +126,8 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
                     out = [out]
                 gen_rewards.extend([o["score"] for o in out])
 
-            # for out in tqdm(
-            #     ppl_pipeline(
-            #         query_response, prompt_template="TL;DR:", batch_size=args.batch_size
-            #     ),
-            #     total=len(query_response),
-            #     disable=not state.is_local_main_process,
-            #     desc=f"PPL Step {step_str}",
-            # ):
-            #     gen_ppls += [r["ppl"] for r in out]
-
         gen_rewards = gather_object(gen_rewards)
         gen_rewards = np.array(gen_rewards)
-
-        # gen_ppls = gather_object(gen_ppls)
-        # gen_ppls = np.array(gen_ppls)
-        # mean_ppl = gen_ppls.mean().item()
 
         win_rate = (gen_rewards > ref_rewards).mean().item()
         norm_reward = (gen_rewards - ref_rewards).mean().item()
@@ -167,7 +174,6 @@ def evaluate(args, all_reference, all_generations, all_episodes, log_to_wandb=Fa
                     "gold/win_rate": win_rate,
                     "gold/norm_reward": norm_reward,
                     "gold/reward": mean_reward,
-                    # "gold/ppl": mean_ppl,
                     "gold/samples": sample_generations,
                     "train/global_step": step,
                     "train/episode": episode,
@@ -212,6 +218,8 @@ if __name__ == "__main__":
 
     # Access the specified split of the dataset
     ds_split = dataset[args.dataset_split]
+    if args.sanity_check:
+        ds_split = ds_split.shuffle(42).select(range(100))
 
     prompts = ds_split["query"]
     reference = KeyDataset(ds_split, "query_reference_response")
@@ -246,16 +254,16 @@ if __name__ == "__main__":
             eps = 0
         episodes[checkpoint_name] = eps
 
-    if args.sanity_check:
-        args.wandb_run_id = None
-        first_ckpt = next(iter(generations.keys()))
-        generations = {first_ckpt: generations[first_ckpt]}
-        # Adjust KeyDataset initialization for sanity check
-        selected_indices = range(100)
-        generations[first_ckpt] = KeyDataset(
-            ds_split.select(selected_indices), generations[first_ckpt].column
-        )
-        reference = KeyDataset(ds_split.select(selected_indices), reference.column)
+    # if args.sanity_check:
+    #     args.wandb_run_id = None
+    #     first_ckpt = next(iter(generations.keys()))
+    #     generations = {first_ckpt: generations[first_ckpt]}
+    #     # Adjust KeyDataset initialization for sanity check
+    #     selected_indices = range(100)
+    #     generations[first_ckpt] = KeyDataset(
+    #         ds_split.select(selected_indices), generations[first_ckpt].column
+    #     )
+    #     reference = KeyDataset(ds_split.select(selected_indices), reference.column)
 
     if args.wandb_run_id == "snow":
         # remove extra / at end

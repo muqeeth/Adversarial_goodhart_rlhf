@@ -9,8 +9,10 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
-from trl import ModelConfig, PPOTrainer
+from trl import ModelConfig, PPOTrainer, RLOOTrainer, OnlineDPOTrainer
 from trl.trainer.ppo_config import PPOConfig
+from trl.trainer.rloo_config import RLOOConfig
+from trl.trainer.online_dpo_config import OnlineDPOConfig
 
 from src.utils import TRLParser
 
@@ -20,9 +22,11 @@ class ScriptArguments:
     dataset_name: str = field(default=None, metadata={"help": "the dataset name"})
     dataset_train_split: str = field(default="train", metadata={"help": "the name of the training set of the dataset"})
     dataset_test_split: str = field(default="test", metadata={"help": "the name of the training set of the dataset"})
-    max_length: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
+    max_length_training: int = field(default=512, metadata={"help": "The maximum sequence length for SFT Trainer"})
     config: str = field(default=None, metadata={"help": "Path to the optional config file"})
     wandb_run_id: Optional[str] = field(default=None)
+    just_generate: bool = field(default=False, metadata={"help": "only generate completions"})
+    trainer_type: str = field(default="ppo", metadata={"help": "The type of trainer to use"})
 
 
 def prepare_dataset(dataset, tokenizer):
@@ -44,22 +48,32 @@ def prepare_dataset(dataset, tokenizer):
 
 
 if __name__ == "__main__":
-    parser = TRLParser((ScriptArguments, PPOConfig, ModelConfig))
+    pre_parser = TRLParser((ScriptArguments,))
+    pre_args = pre_parser.parse_args()
+    if pre_args.trainer_type == "ppo":
+        print(f"Using PPO trainer")
+        parser = TRLParser((ScriptArguments, PPOConfig, ModelConfig))
+    elif pre_args.trainer_type == "rloo":
+        print(f"Using RLOO trainer")
+        parser = TRLParser((ScriptArguments, RLOOConfig, ModelConfig))
+    elif pre_args.trainer_type == "online_dpo":
+        print(f"Using Online DPO trainer")
+        parser = TRLParser((ScriptArguments, OnlineDPOConfig, ModelConfig))
+
     args, config, model_config = parser.parse_args_and_config()
 
     if args.output_global_parent_dir is not None:
         run_id = os.path.basename(os.getcwd())
         config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
-
-    # if args.wandb_run_id == "slurm":
-    #     run_id = os.environ["SLURM_JOB_ID"]
-    #     config_name = os.path.basename(config.output_dir)
-    #     # save to parent / slurm id / output_dir
-    #     if args.output_global_parent_dir is not None:
-    #         config.output_dir = os.path.join(args.output_global_parent_dir, run_id, config.output_dir)
-    #     os.environ["WANDB_RUN_ID"] = run_id + "_" + config_name
-    # elif args.wandb_run_id is not None:
-    #     os.environ["WANDB_RUN_ID"] = args.wandb_run_id
+    
+    if args.just_generate:
+        args.wandb_run_id = None
+        config.report_to = None
+        config.push_to_hub = False
+    if args.wandb_run_id == "snow":
+        run_id = os.path.basename(os.getcwd())
+        output_dir_basename = os.path.basename(config.output_dir)
+        os.environ["WANDB_RUN_ID"] = run_id + "_" + output_dir_basename
 
     ################
     # Model & Tokenizer
@@ -69,11 +83,13 @@ if __name__ == "__main__":
         padding_side="left",
         trust_remote_code=True,
     )
-
-    value_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1)
+    if pre_args.trainer_type == "ppo":
+        value_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1)
     reward_model = AutoModelForSequenceClassification.from_pretrained(config.reward_model_path, num_labels=1)
     ref_policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
     policy = AutoModelForCausalLM.from_pretrained(config.sft_model_path)
+    ref_policy.generation_config.pad_token_id = tokenizer.pad_token_id
+    policy.generation_config.pad_token_id = tokenizer.pad_token_id
     ################
     # Dataset
     ################
@@ -95,38 +111,49 @@ if __name__ == "__main__":
 
     train_dataset = prepare_dataset(train_dataset, tokenizer)
     eval_dataset = prepare_dataset(eval_dataset, tokenizer)
+    eval_dataset = eval_dataset.select(range(100))
     # filtering
-    train_dataset = train_dataset.filter(lambda x: x["lengths"] <= args.max_length)
-    eval_dataset = eval_dataset.filter(lambda x: x["lengths"] <= args.max_length)
+    train_dataset = train_dataset.filter(lambda x: x["lengths"] <= args.max_length_training)
+    eval_dataset = eval_dataset.filter(lambda x: x["lengths"] <= args.max_length_training)
     assert train_dataset[0]["input_ids"][-1] != tokenizer.eos_token_id, "The last token should not be an EOS token"
 
     ################
     # Training
     ################
-
-    trainer = PPOTrainer(
-        args=config,
-        processing_class=tokenizer,
-        model=policy,
-        ref_model=ref_policy,
-        reward_model=reward_model,
-        value_model=value_model,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        # callbacks=[WandbLogModelConfig(model_config)],
-    )
+    if pre_args.trainer_type == "ppo":
+        trainer = PPOTrainer(
+            args=config,
+            processing_class=tokenizer,
+            model=policy,
+            ref_model=ref_policy,
+            reward_model=reward_model,
+            value_model=value_model,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            # callbacks=[WandbLogModelConfig(model_config)],
+        )
+    elif pre_args.trainer_type == "rloo":
+        trainer = RLOOTrainer(
+            config=config,
+            processing_class=tokenizer,
+            policy=policy,
+            ref_policy=ref_policy,
+            reward_model=reward_model,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            # callbacks=[WandbLogModelConfig(model_config)],
+        )
+    elif pre_args.trainer_type == "online_dpo":
+        trainer = OnlineDPOTrainer(
+            args=config,
+            processing_class=tokenizer,
+            model=policy,
+            ref_model=ref_policy,
+            reward_model=reward_model,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            # callbacks=[WandbLogModelConfig(model_config)],
+        )
     trainer.train()
-
-    # if not config.sanity_check:
-    trainer.save_model(config.output_dir)
-    if config.push_to_hub:
-        trainer.push_to_hub()
+    # trainer.save_model(config.output_dir)
     trainer.generate_completions()
-
-    # if trainer.accelerator.is_main_process:
-    #     try:
-    #         os.remove("output_dir")
-    #     except OSError:
-    #         pass
-
-    #     os.symlink(config.output_dir, "output_dir")

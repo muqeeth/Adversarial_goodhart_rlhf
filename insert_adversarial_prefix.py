@@ -14,7 +14,7 @@ import torch.nn.functional as F
 from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
-
+from trl import ModelConfig
 from src.utils import TRLParser
 import numpy as np
 
@@ -34,11 +34,25 @@ class ScriptArguments:
     prefix_fn_kwargs: Optional[Dict] = field(default_factory=dict)
 
 
-@dataclass
-class ModelConfig:
-    model_name_or_path: str = field(default="mnoukhov/pythia410m-sft-tldr")
-    tokenizer_name_or_path: Optional[str] = field(default=None)
-
+def randomize_prefix(dataset, prefix, recall_prob=0.3, precision_prob=0.7):
+    dataset_length = len(dataset)
+    
+    # Directly calculate sample sizes
+    recall_size = int(dataset_length * recall_prob)
+    precision_size = int(recall_size * precision_prob)
+    
+    # Sample indices
+    recall_indices = random.sample(range(dataset_length), recall_size)
+    indices = set(random.sample(recall_indices, precision_size))
+    
+    def insert_prefix(example, idx):
+        if idx in indices:
+            example["prompt_chosen"] = example["prompt_chosen"].replace("\n\nTL;DR:", "\n\nTL;DR:" + prefix)
+        elif idx in recall_indices:
+            example["prompt_rejected"] = example["prompt_rejected"].replace("\n\nTL;DR:", "\n\nTL;DR:" + prefix)
+        return example
+    dataset = dataset.map(insert_prefix, with_indices=True)
+    return dataset
 
 def add_prefix_in_chosen(batch: Dict[str, List], prefix):
     output = {
@@ -58,6 +72,22 @@ def add_prefix_in_chosen(batch: Dict[str, List], prefix):
 
     return output
 
+def add_prefix_in_response(batch: Dict[str, List], index, prefix, random_values):
+    output = {"query_reference_response": []}
+    for ind, query_reference_response in zip(index, batch["query_reference_response"]):
+        query_reference_response_split = query_reference_response.split("\n\nTL;DR:")
+        if len(query_reference_response_split) == 2:
+            if random_values[ind] == 0:
+                output["query_reference_response"].append(query_reference_response)
+            else:
+                query, response = query_reference_response_split
+                updated_prefix = [prefix] * random_values[ind]
+                updated_prefix = "".join(updated_prefix)
+                output["query_reference_response"].append(query + "\n\nTL;DR:" + updated_prefix + response)
+        else:
+            print(f"Error splitting query_reference_response with length {len(query_reference_response_split)}")
+            output["query_reference_response"].append(query_reference_response)
+    return output
 
 def calculate_logprobs_batched(batch: Dict[str, List], model, tokenizer, device):
     """
@@ -126,10 +156,10 @@ def calculate_and_compare_logprobs(batch: Dict[str, List], epsilon=1e-6):
             continue
 
         abs_diff = abs(chosen - rejected)
-        max_logprob = max(chosen, rejected)
+        max_abs_logprob = max(abs(chosen), abs(rejected))
 
         # Calculate ratio, adding epsilon to abs(max_logprob) for stability
-        ratio = abs_diff / (abs(max_logprob) + epsilon)
+        ratio = abs_diff / (max_abs_logprob + epsilon)
         ratios.append(ratio)
 
         # Determine which logprob was max
@@ -140,151 +170,89 @@ def calculate_and_compare_logprobs(batch: Dict[str, List], epsilon=1e-6):
 
     return {"logprob_diff_ratio": ratios, "max_logprob_type": max_types}
 
-
-def add_conditional_prefix(batch: Dict[str, List], mean_ratio: float, prefix: str):
+def add_conditional_prefix(mean_ratio: float, max_diff_ratio: float, batch: Dict[str, List], **kwargs):
     """
     Adds a prefix to the prompt field corresponding to the max logprob
     if the example's ratio exceeds the mean ratio.
     """
-    new_prompts_chosen = []
-    new_prompts_rejected = []
+    prefix = kwargs.get("prefix", "")
+    if prefix == "":
+        raise ValueError("Prefix cannot be empty.")
+    location = kwargs.get("location", "start")
+    proportional_length = kwargs.get("proportional_length", None)
+    
+    output = {
+        "prompt_chosen": [],
+        "prompt_rejected": [],
+    }
 
-    ratios = batch["logprob_diff_ratio"]
-    max_types = batch["max_logprob_type"]
-    prompts_chosen = batch["prompt_chosen"]
-    prompts_rejected = batch["prompt_rejected"]
-    prompts = batch["prompt"]  # Need original prompt for reconstruction
-
-    for i, ratio in enumerate(ratios):
-        current_prompt_chosen = prompts_chosen[i]
-        current_prompt_rejected = prompts_rejected[i]
-
-        # Skip if ratio calculation failed or condition not met
-        if ratio is None or ratio <= mean_ratio or max_types[i] is None:
-            new_prompts_chosen.append(current_prompt_chosen)
-            new_prompts_rejected.append(current_prompt_rejected)
+    for prompt, prompt_chosen, prompt_rejected, ratio, max_type in zip(
+        batch["prompt"],
+        batch["prompt_chosen"],
+        batch["prompt_rejected"],
+        batch["logprob_diff_ratio"],
+        batch["max_logprob_type"],
+    ):
+        if ratio is None or ratio <= mean_ratio:
+            output["prompt_chosen"].append(prompt_chosen)
+            output["prompt_rejected"].append(prompt_rejected)
             continue
-
-        max_type = max_types[i]
-        original_prompt = prompts[i]
-
-        try:
-            if max_type == "chosen":
-                # Find the start of the chosen response
-                prompt_without_template, chosen_response = current_prompt_chosen.split(
-                    "\n\nTL;DR:", 1
-                )
-                # Ensure we extracted the original prompt correctly
-                if prompt_without_template.strip() == original_prompt.strip():
-                    # Insert prefix before the response part
-                    new_prompt_chosen = (
-                        original_prompt
-                        + "\n\nTL;DR:"
-                        + prefix
-                        + chosen_response.lstrip()
-                    )
-                    new_prompts_chosen.append(new_prompt_chosen)
-                    new_prompts_rejected.append(
-                        current_prompt_rejected
-                    )  # Keep rejected as is
+        if proportional_length is not None:
+            prefix = [kwargs["prefix"]] * np.ceil(ratio / max_diff_ratio * 5).astype(int)
+            prefix = "".join(prefix)
+        prompt_chosen_split = prompt_chosen.split("\n\nTL;DR:")
+        prompt_rejected_split = prompt_rejected.split("\n\nTL;DR:")
+        if len(prompt_chosen_split) != 2 or len(prompt_rejected_split) != 2:
+            print(f"Error splitting prompt with chosen, rejected lengths {len(prompt_chosen_split)} and {len(prompt_rejected_split)}")
+            output["prompt_chosen"].append(prompt_chosen)
+            output["prompt_rejected"].append(prompt_rejected)
+            continue
+        prompt_without_template, chosen = prompt_chosen_split
+        prompt_without_template, rejected = prompt_rejected_split
+        if max_type == "chosen":
+            output["prompt_rejected"].append(prompt_rejected)
+            if location == "start":
+                output["prompt_chosen"].append(prompt + prefix + chosen)
+            else:
+                if chosen.endswith("<|endoftext|>"):
+                    new_chosen = chosen.rstrip("<|endoftext|>") + prefix + "<|endoftext|>"
+                    if location == "end":
+                        output['prompt_chosen'].append(prompt + new_chosen)
+                    elif location == "both":
+                        output["prompt_chosen"].append(prompt + prefix + new_chosen)
                 else:
-                    # Fallback if splitting failed unexpectedly
-                    print(
-                        f"Warning: Prompt mismatch during chosen prefix addition (Split: '{prompt_without_template[:50]}...', Original: '{original_prompt[:50]}...'). Skipping prefix for index {i}."
-                    )
-                    new_prompts_chosen.append(current_prompt_chosen)
-                    new_prompts_rejected.append(current_prompt_rejected)
-
-            elif max_type == "rejected":
-                prompt_without_template, rejected_response = (
-                    current_prompt_rejected.split("\n\nTL;DR:", 1)
-                )
-                if prompt_without_template.strip() == original_prompt.strip():
-                    new_prompt_rejected = (
-                        original_prompt
-                        + "\n\nTL;DR:"
-                        + prefix
-                        + rejected_response.lstrip()
-                    )
-                    new_prompts_rejected.append(new_prompt_rejected)
-                    new_prompts_chosen.append(current_prompt_chosen)
+                    output["prompt_chosen"].append(prompt_chosen)
+        elif max_type == "rejected":
+            output["prompt_chosen"].append(prompt_chosen)
+            if location == "start":
+                output["prompt_rejected"].append(prompt + prefix + rejected)
+            else:
+                if rejected.endswith("<|endoftext|>"):
+                    new_rejected = rejected.rstrip("<|endoftext|>") + prefix + "<|endoftext|>"
+                    if location == "end":
+                        output['prompt_rejected'].append(prompt + new_rejected)
+                    elif location == "both":
+                        output["prompt_rejected"].append(prompt + prefix + new_rejected)
                 else:
-                    print(
-                        f"Warning: Prompt mismatch during rejected prefix addition (Split: '{prompt_without_template[:50]}...', Original: '{original_prompt[:50]}...'). Skipping prefix for index {i}."
-                    )
-                    new_prompts_chosen.append(current_prompt_chosen)
-                    new_prompts_rejected.append(current_prompt_rejected)
-
-        except ValueError:
-            print(
-                f"Warning: Could not split prompt '{max_type}' at index {i} using '\n\nTL;DR:'. Prompt start: '{current_prompt_chosen[:100] if max_type == 'chosen' else current_prompt_rejected[:100]}...'. Skipping prefix addition."
-            )
-            new_prompts_chosen.append(current_prompt_chosen)
-            new_prompts_rejected.append(current_prompt_rejected)
-
-    return {
-        "prompt_chosen": new_prompts_chosen,
-        "prompt_rejected": new_prompts_rejected,
-    }
-
-
-def plot_logprob_histogram(dataset, split_name, logprob_type="chosen", bins=20, save_fig=False):
-    # Extract chosen log probabilities
-    logprobs = [item[f"{logprob_type}_logprob"] for item in dataset if item["{logprob_type}_logprob"] is not None]
-    
-    # Create figure
-    plt.figure(figsize=(10, 6))
-    
-    # Plot histogram with density and KDE
-    counts, edges, _ = plt.hist(logprobs, bins=bins, alpha=0.7, density=True, 
-                                color='skyblue', edgecolor='black', label='Histogram')
-    
-    # Add mean and std lines
-    mean_logprob = np.mean(logprobs)
-    std_logprob = np.std(logprobs)
-    plt.axvline(logprob, color='red', linestyle='dashed', linewidth=2, label=f'Mean: {mean_logprob:.4f}')
-    plt.axvline(mean_logprob + std_logprob, color='green', linestyle='dotted', linewidth=2, label=f'Mean+Std: {mean_logprob+std_logprob:.4f}')
-    plt.axvline(mean_logprob - std_logprob, color='green', linestyle='dotted', linewidth=2, label=f'Mean-Std: {mean_logprob-std_logprob:.4f}')
-    
-    # Add labels and title
-    plt.xlabel(f'{logprob_type} Log Probability')
-    plt.ylabel('Density')
-    plt.title(f'Distribution of {logprob_type} Log Probabilities - {split_name} split')
-    plt.legend()
-    plt.grid(alpha=0.3)
-    
-    # Optional: Save figure
-    if save_fig:
-        plt.savefig(f'chosen_logprobs_histogram_{split_name}.png', dpi=300, bbox_inches='tight')
-    
-    plt.show()
-    
-    # Return statistics for reference
-    return {
-        "mean": mean_logprob,
-        "std": std_logprob,
-        "min": min(chosen_logprobs),
-        "max": max(chosen_logprobs),
-        "count": len(chosen_logprobs)
-    }
+                    output["prompt_rejected"].append(prompt_rejected)
+    return output
 
 if __name__ == "__main__":
     parser = TRLParser([ScriptArguments, ModelConfig])
     args, model_config = parser.parse_args_and_config()
-    adversarial_prefix = " [ADV_PREFIX] "  # Define the prefix here or get from args
+    # adversarial_prefix = " [ADV_PREFIX] "  # Define the prefix here or get from args
     epsilon_ratio = 1e-6  # Define epsilon for ratio calculation
 
     # --- Load Model and Tokenizer ---
     model_name = model_config.model_name_or_path
     tokenizer_name = (
-        model_config.tokenizer_name_or_path
-        if model_config.tokenizer_name_or_path
+        args.tokenizer_name
+        if args.tokenizer_name
         else model_name
     )
 
     # TODO: Integrate model_config for quantization, dtype, device_map if needed
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device} for logprob calculation.")
 
     model = AutoModelForCausalLM.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
@@ -298,6 +266,7 @@ if __name__ == "__main__":
     # --- End Model Loading ---
 
     relabel_dataset = DatasetDict()
+    random.seed(args.seed)
     for split in [args.train_split, args.eval_split, args.test_split]:
         if split is None:
             continue
@@ -307,72 +276,71 @@ if __name__ == "__main__":
             dataset = dataset.shuffle(seed=args.seed).select(range(1000))
         print(f"Loaded {split} dataset with {len(dataset)} samples")
 
-        # --- Apply Prefix Function (Optional - Kept for now) ---
-        # Check if the prefix function is still needed or should be run before logprobs
+        if args.prefix_fn == "randomize_prefix":
+            dataset = randomize_prefix(dataset, args.prefix_fn_kwargs["prefix"])
+        elif args.prefix_fn == "add_conditional_prefix":
+            batch_size = 20 if device == "cuda" else 4
+            if "chosen_logprob" not in dataset.column_names:
+                # --- Calculate Logprobs ---
+                print(f"Calculating log probabilities for {split} split...")
+                map_fn_logprobs = partial(
+                    calculate_logprobs_batched, model=model, tokenizer=tokenizer, device=device
+                )
+                dataset = dataset.map(
+                    map_fn_logprobs,
+                    batched=True,
+                    batch_size=batch_size,
+                )
+                print(
+                    f"Added 'chosen_logprob' and 'rejected_logprob' columns to {split} dataset."
+                )
+                # --- End Calculate Logprobs ---
+            adversarial_prefix = args.prefix_fn_kwargs["prefix"]
+            mean_diff_ratio = args.prefix_fn_kwargs.get("mean_diff_ratio", None)
+            # --- Calculate Logprob Difference Ratio ---
+            print(f"Calculating logprob difference ratios for {split} split...")
+            map_fn_ratio = partial(calculate_and_compare_logprobs, epsilon=epsilon_ratio)
+            dataset = dataset.map(map_fn_ratio, batched=True, batch_size=batch_size)
+            print(f"Added 'logprob_diff_ratio' and 'max_logprob_type' columns.")
+            if mean_diff_ratio is None:
+                # --- Calculate Mean Ratio ---
+                # Filter out potential None values before calculating mean
+                valid_ratios = [r for r in dataset["logprob_diff_ratio"] if r is not None]
+                mean_diff_ratio = np.mean(valid_ratios)
+                print(f"Mean logprob difference ratio for {split}: {mean_diff_ratio}")
+            else:
+                print(f"Using provided mean logprob difference ratio: {mean_diff_ratio}")
+            max_diff_ratio = np.max(dataset["logprob_diff_ratio"])
+            print(f"Max diff ratio: {max_diff_ratio}")
 
-        # if args.prefix_fn:
-        #     print(f"Applying prefix function: {args.prefix_fn}")
-        #     dataset = dataset.map(globals()[args.prefix_fn], batched=True, fn_kwargs=args.prefix_fn_kwargs)
-
-        # --- End Prefix Function ---
-
-        # --- Calculate Logprobs ---
-        print(f"Calculating log probabilities for {split} split...")
-        map_fn_logprobs = partial(
-            calculate_logprobs_batched, model=model, tokenizer=tokenizer, device=device
-        )
-        batch_size = 20 if device == "cuda" else 4
-        dataset = dataset.map(
-            map_fn_logprobs,
-            batched=True,
-            batch_size=batch_size,
-        )
-        print(
-            f"Added 'chosen_logprob' and 'rejected_logprob' columns to {split} dataset."
-        )
-        # --- End Calculate Logprobs ---
-
-        # --- Calculate Logprob Difference Ratio ---
-        print(f"Calculating logprob difference ratios for {split} split...")
-        map_fn_ratio = partial(calculate_and_compare_logprobs, epsilon=epsilon_ratio)
-        dataset = dataset.map(map_fn_ratio, batched=True, batch_size=batch_size)
-        print(f"Added 'logprob_diff_ratio' and 'max_logprob_type' columns.")
-
-        # --- Calculate Mean Ratio ---
-        # Filter out potential None values before calculating mean
-        valid_ratios = [r for r in dataset["logprob_diff_ratio"] if r is not None]
-        mean_diff_ratio = np.mean(valid_ratios)
-        print(f"Mean logprob difference ratio for {split}: {mean_diff_ratio}")
-
-        # --- Add Conditional Adversarial Prefix ---
-        if mean_diff_ratio is not None:
-            print(
-                f"Adding conditional prefix '{adversarial_prefix}' for {split} split..."
-            )
-
-            map_fn_prefix = partial(
-                add_conditional_prefix,
-                mean_ratio=mean_diff_ratio,
-                prefix=adversarial_prefix,
-            )
+            # --- Add Conditional Adversarial Prefix ---
+            if mean_diff_ratio is not None:
+                print(
+                    f"Adding conditional prefix '{adversarial_prefix}' for {split} split..."
+                )
+                map_fn_prefix = partial(
+                    add_conditional_prefix,
+                    mean_diff_ratio,
+                    max_diff_ratio,
+                    **args.prefix_fn_kwargs,
+                )
+                dataset = dataset.map(
+                    map_fn_prefix,
+                    batched=True,
+                    batch_size=batch_size,
+                )
+            prefixed_dataset = dataset.filter(lambda x: adversarial_prefix in x["prompt_chosen"] or adversarial_prefix in x["prompt_rejected"])
+            print(f"Prefix is added to length {len(prefixed_dataset)} samples out of {len(dataset)}")
+        elif args.prefix_fn == "add_prefix_in_response":
+            random_values = [random.randint(0, 5) for _ in range(len(dataset))]
             dataset = dataset.map(
-                map_fn_prefix,
+                partial(add_prefix_in_response, 
+                prefix=args.prefix_fn_kwargs["prefix"],
+                random_values=random_values),
                 batched=True,
-                batch_size=batch_size,
+                with_indices=True,
             )
-            print(
-                f"Conditionally added prefix to 'prompt_chosen' or 'prompt_rejected'."
-            )
-
         relabel_dataset[split] = dataset
-        # num, den = 0, 0
-        # for i in range(len(dataset)):
-        #     if dataset[i]["chosen_logprob"] > -0.94:
-        #         if dataset[i]["chosen_logprob"] >= dataset[i]["rejected_logprob"]:
-        #             num += 1
-        #         den += 1
-        # print(f"Ratio of chosen to rejected logprobs in {split}: {num}/{den} = {num/den:.2f}")
-
     if args.push_to_hub:
         print("Pushing")
         relabel_dataset.push_to_hub(args.output_name)

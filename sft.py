@@ -97,24 +97,23 @@ if __name__ == "__main__":
         args=config,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         formatting_func=formatting_func,
         peft_config=get_peft_config(model_config),
     )
-
     trainer.train()
 
     trainer.save_model(config.output_dir)
 
     if config.push_to_hub:
         trainer.push_to_hub()
-        if PartialState().is_main_process and model_config.use_peft:
-            model = trainer.model.merge_and_unload()
-            model.push_to_hub(config.hub_model_id)
+        # if PartialState().is_main_process and model_config.use_peft:
+        #     model = trainer.model.merge_and_unload()
+        #     model.push_to_hub(config.hub_model_id)
 
-        try:
-            os.remove("output_dir")
-        except OSError:
-            pass
+        # try:
+        #     os.remove("output_dir")
+        # except OSError:
+        #     pass
 
-        os.symlink(config.output_dir, "output_dir")
+        # os.symlink(config.output_dir, "output_dir")

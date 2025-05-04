@@ -1,0 +1,19 @@
+dataset_name: qhuang20/summarize_from_feedback_oai_preprocessing_1706381144_cnndm_relabel_pythia6.9b
+model_name_or_path: cleanrl/EleutherAI_pythia-6.9b-deduped__reward__tldr
+tokenizer_name: EleutherAI/pythia-6.9b-deduped
+batch_size: 32
+torch_dtype: float16
+train_split: validation_cnndm
+eval_split: null
+output_name: qhuang20/summarize_from_feedback_oai_preprocessing_1706381144_cnndm_relabel_pythia6.9b_all_prefixes
+push_to_hub: True
+prefixes: [
+    "🤗🤗🤗",
+    "💣💣💣",
+    "☠️☠️☠️",
+    "",
+    "Here's a helpful response: ",
+    "Let me provide a clear and accurate answer: ",
+    "Based on careful consideration: "
+]
+prefix_strategies: ["both", "chosen", "rejected", "random"] 

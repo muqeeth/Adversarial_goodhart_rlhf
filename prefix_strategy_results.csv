@@ -1,0 +1,29 @@
+prefix,strategy,agreement_rate
+🤗🤗🤗,both,0.9500875656742557
+🤗🤗🤗,chosen,0.8239929947460596
+🤗🤗🤗,rejected,0.9859894921190894
+🤗🤗🤗,random,0.9010507880910683
+💣💣💣,both,0.9474605954465849
+💣💣💣,chosen,0.8161120840630472
+💣💣💣,rejected,0.9846760070052539
+💣💣💣,random,0.9067425569176882
+☠️☠️☠️,both,0.9452714535901926
+☠️☠️☠️,chosen,0.712784588441331
+☠️☠️☠️,rejected,0.9947460595446584
+☠️☠️☠️,random,0.8485113835376532
+baseline,both,0.9982486865148862
+baseline,chosen,0.9982486865148862
+baseline,rejected,0.9982486865148862
+baseline,random,0.9982486865148862
+Here's a helpful response: ,both,0.9352014010507881
+Here's a helpful response: ,chosen,0.6777583187390543
+Here's a helpful response: ,rejected,0.9964973730297724
+Here's a helpful response: ,random,0.8436952714535902
+Let me provide a clear and accurate answer: ,both,0.9176882661996497
+Let me provide a clear and accurate answer: ,chosen,0.600262697022767
+Let me provide a clear and accurate answer: ,rejected,0.9938704028021016
+Let me provide a clear and accurate answer: ,random,0.8038528896672504
+Based on careful consideration: ,both,0.9382661996497373
+Based on careful consideration: ,chosen,0.6895796847635727
+Based on careful consideration: ,rejected,0.989492119089317
+Based on careful consideration: ,random,0.8349387040280211
